@@ -29,6 +29,32 @@ en GitHub Actions y no en Cloud Functions.
 
 ---
 
+## Vía rápida: un solo script
+
+Si tienes `gcloud` instalado, este script hace los pasos 1, 2, 4, 7 (dominios) y 9:
+
+```bash
+gcloud auth login
+bash scripts/setup-gcloud.sh
+```
+
+Es idempotente —se puede correr varias veces— y al final imprime qué sigue.
+Habilita las APIs, crea Firestore en `southamerica-east1`, crea la cuenta de
+servicio con sus roles y descarga la clave, fija los dominios autorizados y
+restringe la clave de API por dominio.
+
+El único paso que puede quedar pendiente es **habilitar el proveedor Google**: por
+API a veces exige un cliente OAuth que la consola crea sola. Si el script avisa que
+falló, son 30 segundos en
+<https://console.firebase.google.com/project/busquedasapp/authentication/providers>.
+
+Después de correrlo, salta directo al **paso 3** (desplegar reglas).
+
+Si prefieres ir por la consola web, o el script falla en algo, aquí está el
+paso a paso manual.
+
+---
+
 ## 1. Activar Firestore
 
 1. <https://console.firebase.google.com/project/busquedasapp/firestore>
