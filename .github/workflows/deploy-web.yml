@@ -1,0 +1,71 @@
+name: Desplegar web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/web/**'
+      - 'firebase.json'
+      - 'firestore.rules'
+      - 'firestore.indexes.json'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Construir el panel
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_ALLOWED_EMAILS: ${{ secrets.VITE_ALLOWED_EMAILS }}
+        run: npm run build --workspace @busquedastiendas/web
+
+      - name: Preparar credenciales
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "${FIREBASE_SERVICE_ACCOUNT}" ]; then
+            echo "Falta el secret FIREBASE_SERVICE_ACCOUNT" >&2
+            exit 1
+          fi
+          # El secret puede venir como JSON plano o en base64.
+          if printf '%s' "${FIREBASE_SERVICE_ACCOUNT}" | head -c 1 | grep -q '{'; then
+            printf '%s' "${FIREBASE_SERVICE_ACCOUNT}" > "${RUNNER_TEMP}/sa.json"
+          else
+            printf '%s' "${FIREBASE_SERVICE_ACCOUNT}" | base64 -d > "${RUNNER_TEMP}/sa.json"
+          fi
+          echo "GOOGLE_APPLICATION_CREDENTIALS=${RUNNER_TEMP}/sa.json" >> "${GITHUB_ENV}"
+
+      - name: Desplegar hosting y reglas de Firestore
+        env:
+          FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+        run: |
+          npx --yes firebase-tools@14 deploy \
+            --only hosting,firestore:rules,firestore:indexes \
+            --project "${FIREBASE_PROJECT_ID}" \
+            --non-interactive
+
+      - name: Limpiar credenciales
+        if: always()
+        run: rm -f "${RUNNER_TEMP}/sa.json"

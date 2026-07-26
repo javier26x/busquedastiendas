@@ -1,0 +1,54 @@
+rules_version = '2';
+
+// Reglas del monitor de precios.
+//
+// Modelo de acceso: el panel es de solo lectura y privado. Toda la escritura
+// la hace el scraper con el Admin SDK, que se salta estas reglas por diseno;
+// por eso aca ningun cliente puede escribir nunca.
+//
+// Para dar acceso a otra persona: crea un documento vacio en la coleccion
+// `allowedUsers` cuyo id sea su correo (ej: allowedUsers/otra@gmail.com).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAllowed() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && (
+          request.auth.token.email == 'javier.neo@gmail.com'
+          || exists(/databases/$(database)/documents/allowedUsers/$(request.auth.token.email))
+        );
+    }
+
+    match /products/{productId} {
+      allow read: if isAllowed();
+      allow write: if false;
+
+      match /history/{entryId} {
+        allow read: if isAllowed();
+        allow write: if false;
+      }
+    }
+
+    match /searches/{searchId} {
+      allow read: if isAllowed();
+      allow write: if false;
+    }
+
+    match /runs/{runId} {
+      allow read: if isAllowed();
+      allow write: if false;
+    }
+
+    // El usuario puede ver quien tiene acceso, pero no modificarlo desde la web.
+    match /allowedUsers/{email} {
+      allow read: if isAllowed();
+      allow write: if false;
+    }
+
+    // Cualquier otra ruta queda cerrada.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

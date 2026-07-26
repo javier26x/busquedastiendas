@@ -1,0 +1,24 @@
+{
+  "name": "busquedastiendas",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Monitor de precios en tiendas chilenas (bodegas de jardin y cajas organizadoras) con panel web en Firebase",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/scraper",
+    "packages/web"
+  ],
+  "scripts": {
+    "//": "El `--` final reenvia los argumentos al script del workspace; sin el, npm los consume como flags propios.",
+    "scrape": "npm run scrape --workspace @busquedastiendas/scraper --",
+    "scrape:dry": "npm run scrape --workspace @busquedastiendas/scraper -- --dry-run",
+    "seed": "npm run seed --workspace @busquedastiendas/scraper",
+    "dev": "npm run dev --workspace @busquedastiendas/web",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  }
+}

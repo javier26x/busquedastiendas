@@ -1,0 +1,57 @@
+name: Scrape precios
+
+on:
+  schedule:
+    # 09:00 y 21:00 en Chile continental (UTC-4 en horario de verano,
+    # UTC-3 en invierno; el cron es UTC, asi que la hora local se corre
+    # una hora entre temporadas).
+    - cron: '0 13 * * *'
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      stores:
+        description: 'Tiendas a consultar (ids separados por coma, vacio = todas)'
+        required: false
+        type: string
+      dry_run:
+        description: 'Solo mostrar resultados, sin escribir en Firestore'
+        required: false
+        type: boolean
+        default: false
+
+# Dos corridas simultaneas escribirian los mismos documentos y se pisarian
+# el calculo de variacion de precio.
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Ejecutar scraper
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          STORES: ${{ inputs.stores }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=()
+          if [ -n "${STORES}" ]; then
+            args+=("--stores=${STORES}")
+          fi
+          if [ "${DRY_RUN}" = "true" ]; then
+            args+=("--dry-run")
+          fi
+          npm run scrape -- "${args[@]}"
