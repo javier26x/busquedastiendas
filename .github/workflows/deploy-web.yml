@@ -58,12 +58,10 @@ jobs:
           echo "GOOGLE_APPLICATION_CREDENTIALS=${RUNNER_TEMP}/sa.json" >> "${GITHUB_ENV}"
 
       - name: Desplegar hosting y reglas de Firestore
-        env:
-          FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+        # El proyecto sale de .firebaserc, que esta versionado.
         run: |
           npx --yes firebase-tools@14 deploy \
             --only hosting,firestore:rules,firestore:indexes \
-            --project "${FIREBASE_PROJECT_ID}" \
             --non-interactive
 
       - name: Limpiar credenciales

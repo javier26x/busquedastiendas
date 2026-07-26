@@ -29,13 +29,15 @@ escribir en Firestore (ver `firestore.rules`).
 
 ## Puesta en marcha
 
-El paso a paso completo —crear el proyecto de Firebase, obtener las credenciales y
-configurar los secrets— está en **[SETUP.md](SETUP.md)**. Resumen:
+Proyecto de Firebase: **`busquedasapp`** → <https://busquedasapp.web.app>
+
+El paso a paso —activar Firestore, el login con Google, desplegar reglas y configurar
+los secrets— está en **[SETUP.md](SETUP.md)**. Resumen:
 
 ```bash
 npm install
 
-# 1. Panel en local (necesita packages/web/.env.local, ver SETUP.md)
+# 1. Panel en local (la configuracion va en packages/web/.env.local, ver SETUP.md)
 npm run dev
 
 # 2. Probar el scraper sin escribir nada

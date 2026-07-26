@@ -4,12 +4,13 @@ build/
 .cache/
 
 # Secretos: NUNCA commitear
+# El repositorio es publico: la config de Firebase vive en .env.local (local)
+# y en GitHub Secrets (despliegue), no en el codigo.
 .env
 .env.*
 !.env.example
 service-account*.json
 firebase-adminsdk*.json
-.firebaserc
 
 # Salidas locales del scraper
 packages/scraper/out/
