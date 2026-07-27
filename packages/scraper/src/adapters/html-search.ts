@@ -37,16 +37,26 @@ export function createHtmlSearchAdapter(config: HtmlStoreConfig): StoreAdapter {
       const html = await fetchHtml(url, { headers: { Referer: `${config.base}/` } });
       const $ = cheerio.load(html);
 
-      const fromJsonLd = extractFromJsonLd($, config.base);
-      if (fromJsonLd.length > 0) return fromJsonLd.slice(0, ctx.limit);
-
-      const fromState = extractFromEmbeddedState($, config.base);
-      if (fromState.length > 0) return fromState.slice(0, ctx.limit);
+      const offers = extractStructuredOffers($, config.base);
+      if (offers.length > 0) return offers.slice(0, ctx.limit);
 
       ctx.log(`${config.label}: sin datos estructurados reconocibles`, { query, url });
       return [];
     },
   };
+}
+
+/**
+ * Extrae ofertas de los datos estructurados de una pagina ya parseada.
+ *
+ * Se exporta para que otros adaptadores la usen como ultimo recurso cuando
+ * sus selectores propios fallan: es la via que resulto mas resistente a los
+ * cambios de maquetado de las tiendas.
+ */
+export function extractStructuredOffers($: cheerio.CheerioAPI, base: string): RawOffer[] {
+  const fromJsonLd = extractFromJsonLd($, base);
+  if (fromJsonLd.length > 0) return fromJsonLd;
+  return extractFromEmbeddedState($, base);
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio';
 import type { AdapterContext, RawOffer, StoreAdapter } from '../types.js';
 import { fetchHtml, fetchJson, HttpError } from '../lib/http.js';
+import { extractStructuredOffers } from './html-search.js';
 import { parseClp } from '../lib/money.js';
 import { absoluteUrl, truncate } from '../lib/text.js';
 
@@ -108,7 +109,21 @@ async function searchViaHtml(query: string, ctx: AdapterContext): Promise<RawOff
 
   const items = ITEM_SELECTORS.map((selector) => $(selector)).find((set) => set.length > 0);
   if (!items || items.length === 0) {
-    ctx.log('Mercado Libre: el HTML no coincidio con ningun selector conocido', { query, url });
+    // Ultimo recurso: los datos estructurados que la tienda publica para
+    // buscadores. Sobreviven a los rediseños mucho mejor que las clases CSS.
+    const structured = extractStructuredOffers($, WEB_BASE);
+    if (structured.length > 0) {
+      ctx.log('Mercado Libre: usando datos estructurados (los selectores no coincidieron)', {
+        query,
+        total: structured.length,
+      });
+      return structured.slice(0, ctx.limit).map((offer) => ({
+        ...offer,
+        externalId: extractMlId(offer.url) ?? offer.externalId,
+      }));
+    }
+
+    ctx.log('Mercado Libre: ni selectores ni datos estructurados coincidieron', { query, url });
     return [];
   }
 

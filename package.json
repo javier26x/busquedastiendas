@@ -15,6 +15,7 @@
     "//": "El `--` final reenvia los argumentos al script del workspace; sin el, npm los consume como flags propios.",
     "scrape": "npm run scrape --workspace @busquedastiendas/scraper --",
     "scrape:dry": "npm run scrape --workspace @busquedastiendas/scraper -- --dry-run",
+    "diagnose": "npm run diagnose --workspace @busquedastiendas/scraper --",
     "seed": "npm run seed --workspace @busquedastiendas/scraper",
     "dev": "npm run dev --workspace @busquedastiendas/web",
     "build": "npm run build --workspaces --if-present",

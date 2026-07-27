@@ -15,12 +15,8 @@
         { "fieldPath": "searchIds", "arrayConfig": "CONTAINS" },
         { "fieldPath": "price", "order": "ASCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "history",
-      "queryScope": "COLLECTION",
-      "fields": [{ "fieldPath": "capturedAt", "order": "DESCENDING" }]
     }
   ],
+  "_comment": "Solo indices compuestos. Los de un campo (por ejemplo history.capturedAt) los crea Firestore automaticamente y declararlos hace fallar el deploy con 'this index is not necessary'.",
   "fieldOverrides": []
 }

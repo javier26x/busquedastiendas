@@ -74,6 +74,7 @@ firestore.rules           Quién puede leer. Nadie puede escribir desde el clien
 | `npm run scrape -- --dry-run` | Consulta y muestra por pantalla, sin escribir |
 | `npm run scrape -- --stores=easy,paris` | Limita las tiendas |
 | `npm run scrape -- --searches=bodegas-jardin` | Limita las búsquedas |
+| `npm run diagnose` | Prueba URLs candidatas por tienda y describe qué devuelven |
 | `npm run seed` | Carga productos de ejemplo en Firestore |
 | `npm test` | Tests de la lógica pura (32 casos) |
 | `npm run typecheck` | TypeScript en ambos paquetes |
@@ -160,9 +161,27 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
   al listado HTML.
 - **Estado visible**: `runs` guarda qué tienda falló y por qué, y el panel lo muestra.
 
-Mercado Libre, Easy y Paris son las vías más sólidas (APIs públicas o estructura
-estable). Sodimac y Falabella son best-effort: si dejan de responder, aparecerán
-en rojo en el panel y basta ajustar su adaptador.
+### Estado verificado de cada tienda
+
+Medido con `npm run scrape -- --dry-run` el 27-07-2026:
+
+| Tienda | Estado | Detalle |
+| --- | --- | --- |
+| Falabella | ✅ funciona | 98 productos relevantes vía datos estructurados |
+| Mercado Libre | ⚠️ en revisión | API responde 403; el HTML no coincidió con los selectores |
+| Easy | ⚠️ en revisión | El catálogo VTEX responde 403 |
+| Paris | ⚠️ en revisión | El catálogo VTEX responde 404: no usa esa plataforma |
+| Sodimac | ⚠️ en revisión | Carga los resultados por XHR, no vienen en el HTML |
+
+Para diagnosticar una tienda y ver qué devuelve realmente cada URL candidata:
+
+```bash
+npm run diagnose -- --store=easy --query="caja organizadora"
+```
+
+Reporta código HTTP, tipo de contenido, si hay JSON-LD o estado embebido, y en qué
+rutas del JSON están los arreglos que parecen productos. Con eso se escribe o
+repara un adaptador sin adivinar.
 
 > Las tiendas se consultan con una espera entre peticiones y sin paralelismo, a un
 > volumen comparable al de una persona navegando. Aun así, revisa los términos de
