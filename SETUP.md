@@ -31,14 +31,23 @@ en GitHub Actions y no en Cloud Functions.
 
 ## Vía rápida: un solo script
 
-Si tienes `gcloud` instalado, este script hace los pasos 1, 2, 4, 7 (dominios) y 9:
+Este script hace los pasos 1, 2, 4, 7 (dominios) y 9. Lo más cómodo es correrlo en
+[Cloud Shell](https://console.cloud.google.com/?cloudshell=true&project=busquedasapp),
+que ya viene autenticado y con `gcloud`:
 
 ```bash
-gcloud auth login
+git clone https://github.com/javier26x/busquedastiendas.git
+cd busquedastiendas
 bash scripts/setup-gcloud.sh
 ```
 
+Fuera de Cloud Shell, primero `gcloud auth login`.
+
 Es idempotente —se puede correr varias veces— y al final imprime qué sigue.
+
+> Verás algún `reintentando en Ns`: es esperable. Google tarda hasta un par de
+> minutos en propagar la activación de las APIs, y el script espera en vez de
+> fallar.
 Habilita las APIs, crea Firestore en `southamerica-east1`, crea la cuenta de
 servicio con sus roles y descarga la clave, fija los dominios autorizados y
 restringe la clave de API por dominio.

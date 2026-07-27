@@ -8,8 +8,13 @@
 # revisa primero si ya esta hecho.
 #
 # Requisitos previos:
-#   - gcloud instalado y autenticado:  gcloud auth login
 #   - ser Owner del proyecto busquedasapp
+#   - gcloud autenticado. En Cloud Shell ya lo esta; fuera de ahi:
+#       gcloud auth login
+#
+# Nota: `gcloud services enable` devuelve antes de que las APIs queden
+# utilizables, asi que los pasos que dependen de ellas se reintentan con
+# espera creciente. Es normal ver algun "reintentando en Ns" la primera vez.
 #
 set -euo pipefail
 
@@ -27,6 +32,35 @@ API_KEY_REFERRERS="https://${PROJECT_ID}.web.app/*,https://${PROJECT_ID}.firebas
 say() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 ok()  { printf '    \033[32m✓\033[0m %s\n' "$1"; }
 warn(){ printf '    \033[33m!\033[0m %s\n' "$1"; }
+
+LAST_ERROR=""
+
+# Reintenta un comando con espera creciente.
+#
+# `gcloud services enable` devuelve el control antes de que la API quede
+# realmente utilizable: el backend de Google tarda entre segundos y un par de
+# minutos en propagar la activacion. Sin esto, el primer paso que use una API
+# recien habilitada falla con SERVICE_DISABLED.
+#
+#   retry <intentos> <comando...>
+retry() {
+  local attempts="$1"; shift
+  local delay=10
+  local n=1
+
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+    if [ "${n}" -ge "${attempts}" ]; then
+      return 1
+    fi
+    warn "intento ${n}/${attempts} sin exito; reintentando en ${delay}s (propagacion de APIs)"
+    sleep "${delay}"
+    n=$(( n + 1 ))
+    delay=$(( delay * 2 ))
+  done
+}
 
 # ---------------------------------------------------------------------------
 say "Proyecto activo"
@@ -54,14 +88,34 @@ ok "APIs habilitadas"
 # ---------------------------------------------------------------------------
 say "Base de datos Firestore"
 # ---------------------------------------------------------------------------
+
+# Crea la base, tratando "ya existe" como exito. Guarda la salida para
+# mostrarla solo si se agotan los reintentos, y no ensuciar la consola con el
+# error de propagacion en cada vuelta.
+create_firestore() {
+  local out
+  if out="$(gcloud firestore databases create \
+      --location="${LOCATION}" \
+      --type=firestore-native \
+      --quiet 2>&1)"; then
+    return 0
+  fi
+  if printf '%s' "${out}" | grep -qiE 'already exists|ALREADY_EXISTS'; then
+    return 0
+  fi
+  LAST_ERROR="${out}"
+  return 1
+}
+
 if gcloud firestore databases describe --database='(default)' --quiet >/dev/null 2>&1; then
   ok "ya existe (no se toca: la ubicacion no se puede cambiar despues)"
-else
-  gcloud firestore databases create \
-    --location="${LOCATION}" \
-    --type=firestore-native \
-    --quiet
+elif retry 5 create_firestore; then
   ok "creada en ${LOCATION} en modo nativo"
+else
+  warn "no se pudo crear Firestore despues de varios intentos:"
+  printf '%s\n' "${LAST_ERROR}" | sed 's/^/      /'
+  warn "si el error es SERVICE_DISABLED, espera un minuto y vuelve a correr el script"
+  exit 1
 fi
 
 # ---------------------------------------------------------------------------
@@ -126,16 +180,21 @@ else
 fi
 
 # Dominios autorizados: sin esto el login falla con auth/unauthorized-domain.
-DOMAINS_CODE="$(curl -sS -o /tmp/idt-domains.json -w '%{http_code}' -X PATCH \
-  "${IDT}/admin/v2/projects/${PROJECT_ID}/config?updateMask=authorizedDomains" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "{\"authorizedDomains\":${AUTH_DOMAINS}}")"
+set_auth_domains() {
+  local code
+  code="$(curl -sS -o /tmp/idt-domains.json -w '%{http_code}' -X PATCH \
+    "${IDT}/admin/v2/projects/${PROJECT_ID}/config?updateMask=authorizedDomains" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "{\"authorizedDomains\":${AUTH_DOMAINS}}")"
+  [ "${code}" = "200" ]
+}
 
-if [ "${DOMAINS_CODE}" = "200" ]; then
+if retry 4 set_auth_domains; then
   ok "dominios autorizados: localhost, ${PROJECT_ID}.firebaseapp.com, ${PROJECT_ID}.web.app"
 else
-  warn "no se pudieron fijar los dominios (HTTP ${DOMAINS_CODE}); detalle en /tmp/idt-domains.json"
+  warn "no se pudieron fijar los dominios; detalle en /tmp/idt-domains.json"
+  warn "hazlo a mano en Authentication > Settings > Dominios autorizados"
 fi
 
 # Proveedor Google. Este es el paso menos confiable por API: Firebase crea el
