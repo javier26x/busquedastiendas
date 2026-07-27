@@ -19,29 +19,75 @@ import { absoluteUrl, truncate } from '../lib/text.js';
 export interface HtmlStoreConfig {
   id: string;
   label: string;
-  /** Construye la URL de busqueda a partir del termino. */
-  buildUrl: (query: string) => string;
+  /**
+   * URLs candidatas de busqueda, en orden de preferencia.
+   *
+   * Se prueban hasta que una devuelva productos. Las tiendas cambian sus
+   * rutas de busqueda sin avisar y no siempre es evidente cual usan, asi
+   * que se declaran varias y el adaptador descubre la correcta en vez de
+   * depender de que la unica configurada siga vigente.
+   */
+  buildUrls: (query: string) => string[];
   /** Base para resolver enlaces relativos. */
   base: string;
   enabled?: boolean;
 }
 
+/** Tras estos fallos totales seguidos, se deja de insistir durante la corrida. */
+const MAX_CONSECUTIVE_FAILURES = 2;
+
 export function createHtmlSearchAdapter(config: HtmlStoreConfig): StoreAdapter {
+  // Estado por corrida: evita repetir el sondeo completo en cada consulta.
+  let preferred = 0;
+  let consecutiveFailures = 0;
+
   return {
     id: config.id,
     label: config.label,
     enabled: config.enabled ?? true,
 
     async search(query: string, ctx: AdapterContext): Promise<RawOffer[]> {
-      const url = config.buildUrl(query);
-      const html = await fetchHtml(url, { headers: { Referer: `${config.base}/` } });
-      const $ = cheerio.load(html);
+      const urls = config.buildUrls(query);
 
-      const offers = extractStructuredOffers($, config.base);
-      if (offers.length > 0) return offers.slice(0, ctx.limit);
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        throw new Error(
+          `se omite: ninguna de las ${urls.length} URL candidatas respondio en los intentos previos`,
+        );
+      }
 
-      ctx.log(`${config.label}: sin datos estructurados reconocibles`, { query, url });
-      return [];
+      // Se empieza por la que funciono la vez anterior; el resto queda de
+      // respaldo, en su orden original.
+      const order = [...new Set([preferred, ...urls.map((_url, index) => index)])];
+      const failures: string[] = [];
+
+      for (const index of order) {
+        const url = urls[index];
+        if (!url) continue;
+
+        try {
+          const html = await fetchHtml(url, { headers: { Referer: `${config.base}/` } });
+          const $ = cheerio.load(html);
+          const offers = extractStructuredOffers($, config.base);
+
+          if (offers.length > 0) {
+            if (preferred !== index) {
+              // Se registra cual funciono para poder podar las demas despues.
+              ctx.log(`${config.label}: usando ${url}`);
+              preferred = index;
+            }
+            consecutiveFailures = 0;
+            return offers.slice(0, ctx.limit);
+          }
+
+          failures.push(`${url} -> sin datos estructurados`);
+        } catch (error) {
+          failures.push(`${url} -> ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+
+      // Solo si fallaron todas: una candidata mala no es noticia por si sola.
+      consecutiveFailures += 1;
+      throw new Error(`ninguna URL devolvio productos. ${failures.join(' | ')}`);
     },
   };
 }

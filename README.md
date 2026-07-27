@@ -167,11 +167,16 @@ Medido con `npm run scrape -- --dry-run` el 27-07-2026:
 
 | Tienda | Estado | Detalle |
 | --- | --- | --- |
-| Falabella | ✅ funciona | 98 productos relevantes vía datos estructurados |
-| Mercado Libre | ⚠️ en revisión | API responde 403; el HTML no coincidió con los selectores |
-| Easy | ⚠️ en revisión | El catálogo VTEX responde 403 |
-| Paris | ⚠️ en revisión | El catálogo VTEX responde 404: no usa esa plataforma |
-| Sodimac | ⚠️ en revisión | Carga los resultados por XHR, no vienen en el HTML |
+| Falabella | ✅ funciona | 98 productos únicos vía datos estructurados |
+| Sodimac | 🔍 probando | Ahora prueba también `falabella.com/sodimac-cl`, la plataforma del grupo |
+| Easy | 🔍 probando | VTEX dio 403; se prueban rutas HTML alternativas |
+| Paris | 🔍 probando | VTEX dio 404: no es esa plataforma; se prueban rutas HTML |
+| Mercado Libre | 🔍 probando | API cerrada; ahora cae a datos estructurados |
+| Ripley, Líder, Construmart, Imperial | 🔍 nuevas | Añadidas con detección automática de plataforma |
+
+Las tiendas marcadas 🔍 declaran varias URL candidatas y el adaptador se queda con
+la primera que devuelva productos, registrando cuál fue en el log. Después de una
+corrida real conviene podar las que no se usan.
 
 Para diagnosticar una tienda y ver qué devuelve realmente cada URL candidata:
 
