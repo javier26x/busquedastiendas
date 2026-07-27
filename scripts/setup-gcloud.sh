@@ -189,55 +189,76 @@ say "Firebase Authentication"
 # ---------------------------------------------------------------------------
 TOKEN="$(gcloud auth print-access-token)"
 IDT="https://identitytoolkit.googleapis.com"
+AUTH_CONSOLE="https://console.firebase.google.com/project/${PROJECT_ID}/authentication/providers"
+AUTH_PENDING=0
 
-# Inicializa Auth si el proyecto nunca lo uso. Si ya estaba, responde error y
-# seguimos: es esperable.
-if curl -sS -o /dev/null -w '%{http_code}' -X POST \
-    "${IDT}/v2/projects/${PROJECT_ID}/identityPlatform:initializeAuth" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d '{}' | grep -q '^20'; then
-  ok "Authentication inicializado"
+# La API de administracion de Auth solo responde una vez que Authentication
+# fue activado desde la consola. Mientras no lo este devuelve 403, y no sirve
+# de nada reintentar: hay que activarlo a mano una unica vez.
+CONFIG_CODE="$(curl -sS -o /tmp/idt-config.json -w '%{http_code}' \
+  "${IDT}/admin/v2/projects/${PROJECT_ID}/config" \
+  -H "Authorization: Bearer ${TOKEN}")"
+
+if [ "${CONFIG_CODE}" != "200" ]; then
+  AUTH_PENDING=1
+  warn "Authentication aun no esta activado en el proyecto (HTTP ${CONFIG_CODE})."
+  warn "Es el unico paso que hay que hacer a mano, y toma 30 segundos:"
+  warn "  ${AUTH_CONSOLE}"
+  warn "  Comenzar -> Google -> Habilitar -> elegir correo de soporte -> Guardar"
+  warn "Al activarlo, Firebase agrega solo los dominios autorizados necesarios."
 else
-  warn "Authentication ya estaba inicializado (o requiere la consola)"
+  ok "Authentication activo"
+
+  # Firebase agrega localhost, <proyecto>.web.app y <proyecto>.firebaseapp.com
+  # por su cuenta al activar Auth. Solo tocamos la config si falta alguno.
+  MISSING=0
+  for DOMAIN in "localhost" "${PROJECT_ID}.firebaseapp.com" "${PROJECT_ID}.web.app"; do
+    grep -q "\"${DOMAIN}\"" /tmp/idt-config.json || MISSING=1
+  done
+
+  if [ "${MISSING}" -eq 0 ]; then
+    ok "dominios autorizados ya correctos"
+  else
+    set_auth_domains() {
+      local code
+      code="$(curl -sS -o /tmp/idt-domains.json -w '%{http_code}' -X PATCH \
+        "${IDT}/admin/v2/projects/${PROJECT_ID}/config?updateMask=authorizedDomains" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "{\"authorizedDomains\":${AUTH_DOMAINS}}")"
+      [ "${code}" = "200" ]
+    }
+
+    if retry 3 set_auth_domains; then
+      ok "dominios autorizados actualizados"
+    else
+      warn "no se pudieron fijar los dominios; detalle en /tmp/idt-domains.json"
+      warn "hazlo a mano en Authentication > Settings > Dominios autorizados"
+    fi
+  fi
 fi
 
-# Dominios autorizados: sin esto el login falla con auth/unauthorized-domain.
-set_auth_domains() {
-  local code
-  code="$(curl -sS -o /tmp/idt-domains.json -w '%{http_code}' -X PATCH \
-    "${IDT}/admin/v2/projects/${PROJECT_ID}/config?updateMask=authorizedDomains" \
+# Proveedor Google. Solo tiene sentido intentarlo si Auth ya esta activo:
+# si no, el paso manual de arriba ya lo deja habilitado de paso.
+if [ "${AUTH_PENDING}" -eq 0 ]; then
+  GOOGLE_CODE="$(curl -sS -o /tmp/idt-google.json -w '%{http_code}' -X POST \
+    "${IDT}/admin/v2/projects/${PROJECT_ID}/defaultSupportedIdpConfigs?idpId=google.com" \
     -H "Authorization: Bearer ${TOKEN}" \
     -H "Content-Type: application/json" \
-    -d "{\"authorizedDomains\":${AUTH_DOMAINS}}")"
-  [ "${code}" = "200" ]
-}
+    -d '{"enabled":true}')"
 
-if retry 4 set_auth_domains; then
-  ok "dominios autorizados: localhost, ${PROJECT_ID}.firebaseapp.com, ${PROJECT_ID}.web.app"
-else
-  warn "no se pudieron fijar los dominios; detalle en /tmp/idt-domains.json"
-  warn "hazlo a mano en Authentication > Settings > Dominios autorizados"
+  case "${GOOGLE_CODE}" in
+    200) ok "proveedor Google habilitado" ;;
+    409) ok "proveedor Google ya estaba habilitado" ;;
+    *)
+      # Firebase crea el cliente OAuth solo al habilitarlo desde la consola;
+      # por API puede exigir clientId/clientSecret.
+      AUTH_PENDING=1
+      warn "no se pudo habilitar Google por API (HTTP ${GOOGLE_CODE})"
+      warn "hazlo en 30 segundos aca: ${AUTH_CONSOLE}"
+      ;;
+  esac
 fi
-
-# Proveedor Google. Este es el paso menos confiable por API: Firebase crea el
-# cliente OAuth automaticamente al habilitarlo desde la consola, y por API
-# puede exigir clientId/clientSecret.
-GOOGLE_CODE="$(curl -sS -o /tmp/idt-google.json -w '%{http_code}' -X POST \
-  "${IDT}/admin/v2/projects/${PROJECT_ID}/defaultSupportedIdpConfigs?idpId=google.com" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d '{"enabled":true}')"
-
-case "${GOOGLE_CODE}" in
-  200) ok "proveedor Google habilitado" ;;
-  409) ok "proveedor Google ya estaba habilitado" ;;
-  *)
-    warn "no se pudo habilitar Google por API (HTTP ${GOOGLE_CODE})"
-    warn "hazlo en 30 segundos aca:"
-    warn "https://console.firebase.google.com/project/${PROJECT_ID}/authentication/providers"
-    ;;
-esac
 
 # ---------------------------------------------------------------------------
 say "Restringiendo la clave de API del navegador"
@@ -265,32 +286,45 @@ gcloud firestore databases describe --database='(default)' \
   --format='value(name,locationId,type)' --quiet 2>/dev/null \
   | sed 's/^/    Firestore: /' || warn "Firestore no responde"
 
-curl -sS "${IDT}/admin/v2/projects/${PROJECT_ID}/config" \
-  -H "Authorization: Bearer ${TOKEN}" \
-  | grep -o '"authorizedDomains":\[[^]]*\]' \
-  | sed 's/^/    Auth: /' || warn "no se pudo leer la config de Auth"
+if [ "${AUTH_PENDING}" -eq 0 ]; then
+  curl -sS "${IDT}/admin/v2/projects/${PROJECT_ID}/config" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    | grep -o '"authorizedDomains":\[[^]]*\]' \
+    | sed 's/^/    Auth: /' || warn "no se pudo leer la config de Auth"
+else
+  printf '    Auth: pendiente de activar en la consola\n'
+fi
 
 # ---------------------------------------------------------------------------
-say "Listo. Siguientes pasos"
+say "Siguientes pasos"
 # ---------------------------------------------------------------------------
+if [ "${AUTH_PENDING}" -ne 0 ]; then
+  cat <<EOF
+    0. PRIMERO, activar Authentication (unico paso manual, 30 segundos):
+         ${AUTH_CONSOLE}
+         Comenzar -> Google -> Habilitar -> correo de soporte -> Guardar
+
+EOF
+fi
+
+# firebase-tools acepta la cuenta de servicio via GOOGLE_APPLICATION_CREDENTIALS,
+# asi se evita el login interactivo con navegador.
 cat <<EOF
     1. Desplegar reglas e indices de Firestore:
-         npx firebase-tools login
-         npx firebase-tools deploy --only firestore:rules,firestore:indexes
-
-    2. Primera corrida del scraper:
          export GOOGLE_APPLICATION_CREDENTIALS="${KEY_PATH}"
+         npx --yes firebase-tools@14 deploy --only firestore:rules,firestore:indexes
+
+    2. Primera corrida del scraper (misma variable ya exportada):
+         npm install
          npm run scrape -- --dry-run     # ver que tiendas responden
          npm run scrape                  # corrida real
 
     3. Ver el panel:
          npm run dev                     # http://localhost:5173
 
-    4. Cargar el secret en GitHub (necesita la CLI 'gh', o hazlo por la web):
+    4. Cargar los secrets en GitHub (necesita la CLI 'gh', o hazlo por la web):
          gh secret set FIREBASE_SERVICE_ACCOUNT < "${KEY_PATH}"
 
-       Los VITE_* salen de packages/web/.env.local:
-         while IFS='=' read -r k v; do
-           case "\$k" in VITE_*) gh secret set "\$k" --body "\$v" ;; esac
-         done < packages/web/.env.local
+       Los VITE_* salen de packages/web/.env.local, que no viene en el clon.
+       Copialo desde .env.example y completalo, o crea los secrets a mano.
 EOF
