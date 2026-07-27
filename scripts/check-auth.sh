@@ -123,6 +123,11 @@ else
       ok "${label}: la clave funciona"
     else
       bad "${label}: ${status:-error} — ${message:-sin detalle}"
+      # Sin un JSON de error reconocible, mostramos la respuesta cruda: suele
+      # ser un fallo de curl porque la clave trae caracteres no validos en URL.
+      if [ -z "${status}" ] && [ -z "${message}" ]; then
+        info "  respuesta: $(printf '%s' "${body}" | tr -d '\n' | cut -c1-160)"
+      fi
       case "${status}${message}" in
         *API_KEY_INVALID*|*"API key not valid"*)
           info "  la clave no es reconocida por Google (mal copiada o de otro proyecto)" ;;
