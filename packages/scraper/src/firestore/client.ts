@@ -7,7 +7,9 @@ import { getFirestore, type Firestore } from 'firebase-admin/firestore';
  * Credenciales, en orden de preferencia:
  *   1. `FIREBASE_SERVICE_ACCOUNT` con el JSON de la cuenta de servicio
  *      (texto plano o base64). Es lo que usa el workflow de GitHub Actions.
- *   2. `GOOGLE_APPLICATION_CREDENTIALS` apuntando a un archivo (uso local).
+ *   2. Credenciales por defecto del entorno: `GOOGLE_APPLICATION_CREDENTIALS`,
+ *      `gcloud auth application-default login`, o Cloud Shell / GCE, donde ya
+ *      estan disponibles sin configurar nada.
  */
 let cached: Firestore | null = null;
 
@@ -27,13 +29,23 @@ export function getDb(): Firestore {
         }),
         projectId: serviceAccount.project_id,
       });
-    } else if (process.env['GOOGLE_APPLICATION_CREDENTIALS']) {
-      initializeApp({ credential: applicationDefault() });
     } else {
-      throw new Error(
-        'Faltan credenciales de Firebase. Define FIREBASE_SERVICE_ACCOUNT (JSON o base64) ' +
-          'o GOOGLE_APPLICATION_CREDENTIALS. Para probar sin Firebase usa --dry-run.',
-      );
+      // Credenciales por defecto del entorno: cubre GOOGLE_APPLICATION_CREDENTIALS,
+      // `gcloud auth application-default login` y Cloud Shell / GCE, donde ya
+      // vienen disponibles sin configurar nada.
+      try {
+        initializeApp({
+          credential: applicationDefault(),
+          projectId:
+            process.env['GOOGLE_CLOUD_PROJECT'] ?? process.env['GCLOUD_PROJECT'] ?? undefined,
+        });
+      } catch {
+        throw new Error(
+          'Faltan credenciales de Firebase. Opciones: definir FIREBASE_SERVICE_ACCOUNT ' +
+            '(JSON o base64), apuntar GOOGLE_APPLICATION_CREDENTIALS a la clave, o ejecutar ' +
+            '`gcloud auth application-default login`. Para probar sin Firebase usa --dry-run.',
+        );
+      }
     }
   }
 
