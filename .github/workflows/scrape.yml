@@ -38,6 +38,23 @@ jobs:
           node-version: '22'
           cache: npm
 
+      # Se comprueba antes de scrapear: sin esto la corrida gasta tres minutos
+      # consultando tiendas y recien falla al intentar escribir en Firestore.
+      - name: Verificar credenciales
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "Modo dry-run: no se necesitan credenciales."
+            exit 0
+          fi
+          if [ -z "${FIREBASE_SERVICE_ACCOUNT}" ]; then
+            echo "::error::Falta el secret FIREBASE_SERVICE_ACCOUNT. Cargalo en Settings > Secrets and variables > Actions con el JSON completo de la cuenta de servicio."
+            exit 1
+          fi
+          echo "Credenciales presentes."
+
       - name: Instalar dependencias
         run: npm ci
 

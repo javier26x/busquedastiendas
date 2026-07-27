@@ -33,19 +33,27 @@ export function getDb(): Firestore {
       // Credenciales por defecto del entorno: cubre GOOGLE_APPLICATION_CREDENTIALS,
       // `gcloud auth application-default login` y Cloud Shell / GCE, donde ya
       // vienen disponibles sin configurar nada.
-      try {
-        initializeApp({
-          credential: applicationDefault(),
-          projectId:
-            process.env['GOOGLE_CLOUD_PROJECT'] ?? process.env['GCLOUD_PROJECT'] ?? undefined,
-        });
-      } catch {
+      //
+      // Se valida antes de seguir: applicationDefault() no falla al construirse
+      // sino al primer uso, y para entonces el error que aparece es
+      // "Unable to detect a Project Id", que no dice nada del problema real.
+      const projectId =
+        process.env['GOOGLE_CLOUD_PROJECT'] ??
+        process.env['GCLOUD_PROJECT'] ??
+        process.env['FIREBASE_PROJECT_ID'];
+
+      if (!projectId && !process.env['GOOGLE_APPLICATION_CREDENTIALS']) {
         throw new Error(
-          'Faltan credenciales de Firebase. Opciones: definir FIREBASE_SERVICE_ACCOUNT ' +
-            '(JSON o base64), apuntar GOOGLE_APPLICATION_CREDENTIALS a la clave, o ejecutar ' +
-            '`gcloud auth application-default login`. Para probar sin Firebase usa --dry-run.',
+          'Faltan credenciales de Firebase. Opciones:\n' +
+            '  - definir FIREBASE_SERVICE_ACCOUNT con el JSON de la cuenta de servicio\n' +
+            '    (en GitHub Actions: Settings > Secrets and variables > Actions)\n' +
+            '  - apuntar GOOGLE_APPLICATION_CREDENTIALS al archivo de la clave\n' +
+            '  - ejecutar `gcloud auth application-default login`\n' +
+            'Para probar sin escribir en Firestore, usa --dry-run.',
         );
       }
+
+      initializeApp({ credential: applicationDefault(), projectId });
     }
   }
 
