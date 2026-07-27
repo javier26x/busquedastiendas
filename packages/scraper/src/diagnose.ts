@@ -19,54 +19,43 @@ interface Probe {
   url: (query: string) => string;
 }
 
+/**
+ * Solo se sondean las URL que ya se sabe que responden 200.
+ *
+ * Las que devuelven 403 en todas sus rutas (Easy, Ripley) estan bloqueadas
+ * por un WAF y no es un problema de ruta; las que dan 404 en todas apuntan a
+ * un dominio equivocado. En ambos casos el sondeo no aporta nada nuevo.
+ */
 const PROBES: Probe[] = [
   {
-    store: 'mercadolibre',
-    label: 'listado (actual)',
-    url: (q) => `https://listado.mercadolibre.cl/${encodeURIComponent(q.replace(/\s+/g, '-'))}`,
-  },
-  {
-    store: 'mercadolibre',
-    label: 'buscador jm',
-    url: (q) => `https://www.mercadolibre.cl/jm/search?as_word=${encodeURIComponent(q)}`,
-  },
-  {
-    store: 'easy',
-    label: 'catalogo VTEX (actual)',
-    url: (q) =>
-      `https://www.easy.cl/api/catalog_system/pub/products/search?ft=${encodeURIComponent(q)}&_from=0&_to=4`,
-  },
-  {
-    store: 'easy',
-    label: 'busqueda HTML',
-    url: (q) => `https://www.easy.cl/search?q=${encodeURIComponent(q)}`,
+    store: 'falabella',
+    label: 'referencia que SI funciona',
+    url: (q) => `https://www.falabella.com/falabella-cl/search?Ntt=${encodeURIComponent(q)}`,
   },
   {
     store: 'paris',
-    label: 'catalogo VTEX (actual)',
-    url: (q) =>
-      `https://www.paris.cl/api/catalog_system/pub/products/search?ft=${encodeURIComponent(q)}&_from=0&_to=4`,
-  },
-  {
-    store: 'paris',
-    label: 'busqueda HTML',
+    label: 'responde 200 sin datos reconocidos',
     url: (q) => `https://www.paris.cl/search/?q=${encodeURIComponent(q)}`,
   },
   {
     store: 'sodimac',
-    label: 'busqueda HTML (actual)',
+    label: 'responde 200 sin datos reconocidos',
     url: (q) => `https://www.sodimac.cl/sodimac-cl/search?Ntt=${encodeURIComponent(q)}`,
   },
   {
-    store: 'sodimac',
-    label: 'API interna search-v2',
-    url: (q) =>
-      `https://www.sodimac.cl/s/search/v1/search?Ntt=${encodeURIComponent(q)}&subdomain=sodimac-cl`,
+    store: 'lider',
+    label: 'responde 200 sin datos reconocidos',
+    url: (q) => `https://www.lider.cl/search?query=${encodeURIComponent(q)}`,
   },
   {
-    store: 'falabella',
-    label: 'busqueda HTML (funciona, referencia)',
-    url: (q) => `https://www.falabella.com/falabella-cl/search?Ntt=${encodeURIComponent(q)}`,
+    store: 'imperial',
+    label: 'responde 200 sin datos reconocidos',
+    url: (q) => `https://www.imperial.cl/search?q=${encodeURIComponent(q)}`,
+  },
+  {
+    store: 'mercadolibre',
+    label: 'listado',
+    url: (q) => `https://listado.mercadolibre.cl/${encodeURIComponent(q.replace(/\s+/g, '-'))}`,
   },
 ];
 
@@ -104,6 +93,27 @@ function describeArrays(value: unknown, path = '$', depth = 0, found: string[] =
   }
 
   return found;
+}
+
+/** Corta el objeto JSON balanceado que empieza en `start`. */
+function sliceBalancedJson(text: string, start: number): string | null {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < text.length; i += 1) {
+    const char = text[i];
+    if (escaped) { escaped = false; continue; }
+    if (char === '\\') { escaped = true; continue; }
+    if (char === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
 }
 
 function safeParse(text: string): unknown {
@@ -172,17 +182,40 @@ async function probe(entry: Probe, query: string): Promise<void> {
 
   console.log(`    JSON-LD: ${ldBlocks.length} bloque(s), ${ldWithProduct} con "Product"`);
 
-  for (const globalName of ['__NEXT_DATA__', '__PRELOADED_STATE__', '__INITIAL_STATE__']) {
-    if (body.includes(globalName)) {
-      console.log(`    contiene ${globalName}`);
-      if (globalName === '__NEXT_DATA__') {
-        const parsed = safeParse($('script#__NEXT_DATA__').first().contents().text());
-        if (parsed !== undefined) {
-          console.log('      arreglos dentro de __NEXT_DATA__:');
-          for (const line of describeArrays(parsed)) console.log(`        ${line}`);
-        }
-      }
+  // Se revisan TODOS los scripts en linea, no solo los nombres conocidos:
+  // cada tienda guarda su estado con un nombre distinto y lo que interesa es
+  // encontrar donde estan los productos, se llame como se llame.
+  const scripts = $('script:not([src])').toArray();
+  let dumped = 0;
+
+  for (const script of scripts) {
+    if (dumped >= 3) break;
+
+    const text = $(script).contents().text();
+    if (text.length < 2000) continue; // Los estados con productos son grandes.
+
+    const id = $(script).attr('id') ?? $(script).attr('type') ?? '(sin id)';
+
+    // El script puede ser JSON puro o una asignacion `window.X = {...}`.
+    let parsed = safeParse(text.trim());
+    if (parsed === undefined) {
+      const start = text.indexOf('{');
+      if (start !== -1) parsed = safeParse(sliceBalancedJson(text, start) ?? '');
     }
+
+    if (parsed === undefined) continue;
+
+    const arrays = describeArrays(parsed);
+    if (arrays.length === 0) continue;
+
+    dumped += 1;
+    console.log(`    script ${id} (${text.length} bytes) — arreglos:`);
+    for (const line of arrays) console.log(`      ${line}`);
+  }
+
+  if (dumped === 0) {
+    console.log('    ningun script en linea contiene JSON con arreglos grandes');
+    console.log('    (probable carga por XHR: los productos no vienen en el HTML)');
   }
 
   const selectors = [

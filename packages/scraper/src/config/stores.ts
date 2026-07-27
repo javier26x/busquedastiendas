@@ -36,9 +36,10 @@ function createUnknownPlatformStore(config: {
         base,
         buildUrls: (q) => [
           ...(config.paths?.(q) ?? []),
-          // Busqueda por texto completo de VTEX renderizada en HTML.
-          `${base}/${enc(q)}?map=ft`,
+          // Rutas genericas de las plataformas mas usadas en retail chileno.
+          `${base}/${enc(q)}?map=ft`, // VTEX
           `${base}/search?q=${enc(q)}`,
+          `${base}/catalogsearch/result/?q=${enc(q)}`, // Magento
         ],
       }),
     ],

@@ -280,7 +280,7 @@ function collectStateProducts(value: unknown, depth = 0): Record<string, unknown
   return found;
 }
 
-const NAME_KEYS = ['displayName', 'productName', 'name', 'title'];
+const NAME_KEYS = ['displayName', 'productName', 'productTitle', 'name', 'title', 'nombre'];
 
 function looksLikeProduct(node: Record<string, unknown>): boolean {
   const hasName = NAME_KEYS.some((key) => {
@@ -293,7 +293,17 @@ function looksLikeProduct(node: Record<string, unknown>): boolean {
 
 /** Precios en estados embebidos aparecen en muchas formas distintas. */
 function extractStatePrice(node: Record<string, unknown>): number | null {
-  const direct = ['price', 'currentPrice', 'salePrice', 'finalPrice', 'bestPrice'];
+  const direct = [
+    'price',
+    'currentPrice',
+    'salePrice',
+    'finalPrice',
+    'bestPrice',
+    'sellingPrice',
+    'priceValue',
+    'lowPrice',
+    'precio',
+  ];
   for (const key of direct) {
     const value = node[key];
     if (typeof value === 'number' || typeof value === 'string') {

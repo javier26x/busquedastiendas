@@ -64,8 +64,18 @@ async function request(url: string, options: FetchOptions, accept: string): Prom
         headers: {
           'User-Agent': DEFAULT_UA,
           Accept: accept,
-          'Accept-Language': 'es-CL,es;q=0.9',
+          'Accept-Language': 'es-CL,es;q=0.9,es-ES;q=0.8',
           'Cache-Control': 'no-cache',
+          // Cabeceras que envia un navegador real. Algunos WAF rechazan
+          // peticiones que solo traen User-Agent, por incoherentes.
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Sec-Fetch-User': '?1',
+          'Upgrade-Insecure-Requests': '1',
+          'sec-ch-ua': '"Chromium";v="125", "Not.A/Brand";v="24"',
+          'sec-ch-ua-mobile': '?0',
+          'sec-ch-ua-platform': '"Windows"',
           ...options.headers,
         },
       });
