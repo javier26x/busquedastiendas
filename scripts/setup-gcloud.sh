@@ -129,22 +129,45 @@ else
     --description="Escribe productos en Firestore y despliega el panel" \
     --quiet
   ok "creada: ${SA_EMAIL}"
+
+  # Una cuenta recien creada tarda unos segundos en ser visible para la API
+  # de politicas IAM, que es la que asigna los roles mas abajo.
+  sa_visible() { gcloud iam service-accounts describe "${SA_EMAIL}" --quiet >/dev/null 2>&1; }
+  retry 4 sa_visible >/dev/null || warn "la cuenta aun no se lista; se reintentara al asignar roles"
 fi
 
 # roles/datastore.user                     -> el scraper escribe en Firestore
 # roles/firebase.developAdmin              -> desplegar hosting y reglas
 # roles/serviceusage.serviceUsageConsumer  -> firebase-tools consulta las APIs
+
+# La API de politicas puede no ver todavia una cuenta recien creada y
+# responder "does not exist"; por eso tambien va con reintentos.
+grant_role() {
+  local role="$1"
+  local out
+  if out="$(gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+      --member="serviceAccount:${SA_EMAIL}" \
+      --role="${role}" \
+      --condition=None \
+      --quiet 2>&1)"; then
+    return 0
+  fi
+  LAST_ERROR="${out}"
+  return 1
+}
+
 for ROLE in \
   roles/datastore.user \
   roles/firebase.developAdmin \
   roles/serviceusage.serviceUsageConsumer
 do
-  gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-    --member="serviceAccount:${SA_EMAIL}" \
-    --role="${ROLE}" \
-    --condition=None \
-    --quiet >/dev/null
-  ok "rol ${ROLE}"
+  if retry 5 grant_role "${ROLE}"; then
+    ok "rol ${ROLE}"
+  else
+    warn "no se pudo asignar ${ROLE}:"
+    printf '%s\n' "${LAST_ERROR}" | sed 's/^/      /'
+    exit 1
+  fi
 done
 
 # ---------------------------------------------------------------------------
