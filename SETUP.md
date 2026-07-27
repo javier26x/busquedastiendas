@@ -11,7 +11,7 @@ en GitHub Actions y no en Cloud Functions.
 | --- | --- |
 | Proyecto de Firebase creado | ✅ `busquedasapp` |
 | App web registrada y configuración obtenida | ✅ |
-| `packages/web/.env.local` con la configuración | ✅ (creado, no se versiona) |
+| `packages/web/.env.local` con la configuración | genera con `bash scripts/write-env.sh` |
 | `.firebaserc` apuntando al proyecto | ✅ (versionado, solo el ID) |
 | Firestore activado | ⬜ paso 1 |
 | Google Sign-In activado | ⬜ paso 2 |
@@ -208,6 +208,16 @@ Las reglas no están desplegadas, o el correo no coincide:
 
 **"Falta configurar Firebase" al abrir el panel**
 No existe `packages/web/.env.local`, o Vite no se reinició después de crearlo.
+
+**`auth/api-key-not-valid` al entrar**
+La clave que quedó en el build no es válida: suele pasar al pegarla a mano truncada
+o enmascarada. Regenera el archivo desde el origen y vuelve a desplegar:
+
+```bash
+bash scripts/write-env.sh
+npm run build --workspace @busquedastiendas/web
+npx --yes firebase-tools@14 deploy --only hosting
+```
 
 **Una tienda aparece en rojo en el panel**
 Cambió su sitio y su adaptador dejó de reconocerlo. Diagnostica con:
