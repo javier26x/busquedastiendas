@@ -140,22 +140,24 @@ function toDate(value: unknown): Date | null {
 }
 
 /**
- * Deja la coleccion `searches` alineada con la configuracion del scraper,
- * para que la web pueda mostrar las pestanas sin duplicar la definicion.
+ * Registra cuando se ejecuto cada busqueda.
+ *
+ * Solo toca ese campo: la definicion (nombre, terminos, reglas) la maneja el
+ * usuario desde la web y el scraper no debe pisarla.
  */
-export async function syncSearches(db: Firestore, searches: SearchDefinition[]): Promise<void> {
+export async function markSearchesRun(
+  db: Firestore,
+  searches: SearchDefinition[],
+  now: Date,
+): Promise<void> {
+  if (searches.length === 0) return;
+
   const batch = db.batch();
 
   for (const search of searches) {
     batch.set(
       db.collection(COLLECTIONS.searches).doc(search.id),
-      {
-        id: search.id,
-        label: search.label,
-        queries: search.queries,
-        enabled: search.enabled,
-        updatedAt: Timestamp.now(),
-      },
+      { lastRunAt: Timestamp.fromDate(now) },
       { merge: true },
     );
   }

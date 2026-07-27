@@ -128,26 +128,35 @@ dejarla en el cron.
 
 ## Agregar una búsqueda
 
-En `packages/scraper/src/config/searches.ts`. Las reglas de `match` filtran el ruido
-del buscador de cada tienda:
+**Desde el panel**, con el botón `+ Búsqueda`. Escribes un nombre —"Pañales"— y
+opcionalmente los términos a consultar; el resto se deduce. La búsqueda entra en la
+siguiente corrida del cron.
 
-```ts
-{
-  id: 'escaleras',
-  label: 'Escaleras',
-  queries: ['escalera aluminio', 'escalera tijera'],
-  match: {
-    // El título debe tener al menos un término de cada grupo...
-    requireAll: [['escalera'], ['aluminio', 'tijera', 'telescopica']],
-    // ...y ninguno de estos.
-    exclude: ['juguete', 'miniatura'],
-  },
-  enabled: true,
-}
+Las búsquedas viven en la colección `searches` de Firestore, que es la fuente de
+verdad. Las definiciones de `packages/scraper/src/config/searches.ts` solo se usan
+como semilla cuando la colección está vacía: el scraper nunca pisa lo que edites.
+
+### Filtros de relevancia
+
+Los buscadores de las tiendas devuelven mucho ruido, así que cada búsqueda filtra
+por el título del producto. Se derivan del nombre y son editables en
+*Ajustar filtros de relevancia*:
+
+- **Palabras obligatorias** — una línea por requisito; las palabras de una misma
+  línea son alternativas. El título debe cumplir **todas** las líneas.
+- **Palabras a excluir** — si el título contiene alguna, se descarta.
+
+Para "Bodegas de jardín" quedan así:
+
+```
+bodega, caseta, cobertizo     ← alguna de estas
+jardin, exterior, patio       ← y alguna de estas
 ```
 
-La web toma las pestañas de la colección `searches`, que el scraper sincroniza sola
-en cada corrida.
+excluyendo `vino, bodegaje, juguete`, que es lo que devuelve el buscador si no.
+
+Al crear "Pañales" se genera `panal` como única palabra obligatoria: se usa la raíz
+para que el singular también aparezca.
 
 ## Sobre la fragilidad del scraping
 

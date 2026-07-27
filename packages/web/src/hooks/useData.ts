@@ -59,6 +59,22 @@ function toProduct(id: string, data: DocumentData): Product {
   };
 }
 
+function toSearch(id: string, data: DocumentData): SearchDoc {
+  const match = (data['match'] ?? {}) as Record<string, unknown>;
+
+  return {
+    id,
+    label: String(data['label'] ?? id),
+    queries: Array.isArray(data['queries']) ? (data['queries'] as string[]) : [],
+    match: {
+      requireAll: Array.isArray(match['requireAll']) ? (match['requireAll'] as string[][]) : [],
+      exclude: Array.isArray(match['exclude']) ? (match['exclude'] as string[]) : [],
+    },
+    enabled: data['enabled'] !== false,
+    lastRunAt: toDate(data['lastRunAt']),
+  };
+}
+
 interface AsyncState<T> {
   data: T;
   loading: boolean;
@@ -110,13 +126,10 @@ export function useSearches(): AsyncState<SearchDoc[]> {
     return onSnapshot(
       collection(getDb(), 'searches'),
       (snapshot) => {
+        // Se traen tambien las pausadas: el administrador necesita verlas
+        // para poder reactivarlas. El panel filtra por `enabled` al pintar.
         const searches = snapshot.docs
-          .map((doc) => ({
-            id: doc.id,
-            label: String(doc.data()['label'] ?? doc.id),
-            enabled: doc.data()['enabled'] !== false,
-          }))
-          .filter((search) => search.enabled)
+          .map((doc) => toSearch(doc.id, doc.data()))
           .sort((a, b) => a.label.localeCompare(b.label, 'es'));
 
         setState({ data: searches, loading: false, error: null });

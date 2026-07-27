@@ -1083,3 +1083,123 @@ code {
     flex-wrap: wrap;
   }
 }
+
+/* ------------------------------ Administrar busquedas ------------------------------ */
+
+.tab--action {
+  border-style: dashed;
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.tab--action:hover {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.search-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.search-list li.is-disabled {
+  opacity: 0.55;
+}
+
+.search-list__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.search-list__label {
+  font-weight: 600;
+}
+
+.search-list__queries {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.search-list__actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.btn--danger {
+  color: var(--up);
+  border-color: color-mix(in srgb, var(--up) 35%, transparent);
+}
+
+.btn--danger:hover {
+  background: var(--up-bg);
+}
+
+.confirm {
+  flex-basis: 100%;
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.confirm p {
+  margin: 0;
+}
+
+.confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.search-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.search-form textarea.input {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.45;
+}
+
+.search-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.form-errors {
+  margin: 0;
+  padding: 10px 14px 10px 28px;
+  border-radius: var(--radius-sm);
+  background: var(--up-bg);
+  color: var(--up);
+  font-size: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--up) 30%, transparent);
+}

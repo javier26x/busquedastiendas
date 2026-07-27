@@ -16,6 +16,7 @@ import { FiltersBar } from './FiltersBar.js';
 import { ProductTable } from './ProductTable.js';
 import { ProductDetail } from './ProductDetail.js';
 import { RunStatus } from './RunStatus.js';
+import { SearchManager } from './SearchManager.js';
 import type { Product } from '../types.js';
 
 export function Dashboard(): ReactNode {
@@ -27,6 +28,7 @@ export function Dashboard(): ReactNode {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>('precio-asc');
   const [selected, setSelected] = useState<Product | null>(null);
+  const [managing, setManaging] = useState(false);
 
   const stores = useMemo(() => storeOptions(products.data), [products.data]);
 
@@ -47,15 +49,24 @@ export function Dashboard(): ReactNode {
 
   const stats = useMemo(() => computeStats(inSearch), [inSearch]);
 
-  const searchTabs = useMemo(() => {
+  const productCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const product of products.data) {
       for (const id of product.searchIds) {
         counts.set(id, (counts.get(id) ?? 0) + 1);
       }
     }
-    return searches.data.map((search) => ({ ...search, count: counts.get(search.id) ?? 0 }));
-  }, [searches.data, products.data]);
+    return counts;
+  }, [products.data]);
+
+  // Las pausadas se administran pero no ocupan una pestana.
+  const searchTabs = useMemo(
+    () =>
+      searches.data
+        .filter((search) => search.enabled)
+        .map((search) => ({ ...search, count: productCounts.get(search.id) ?? 0 })),
+    [searches.data, productCounts],
+  );
 
   return (
     <div className="app">
@@ -110,6 +121,15 @@ export function Dashboard(): ReactNode {
               {search.label} <span className="tab__count">{search.count}</span>
             </button>
           ))}
+
+          <button
+            type="button"
+            className="tab tab--action"
+            onClick={() => setManaging(true)}
+            title="Crear, editar o pausar búsquedas"
+          >
+            + Búsqueda
+          </button>
         </nav>
 
         <StatsBar stats={stats} />
@@ -134,6 +154,14 @@ export function Dashboard(): ReactNode {
       </main>
 
       {selected && <ProductDetail product={selected} onClose={() => setSelected(null)} />}
+
+      {managing && (
+        <SearchManager
+          searches={searches.data}
+          counts={productCounts}
+          onClose={() => setManaging(false)}
+        />
+      )}
     </div>
   );
 }

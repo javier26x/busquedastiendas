@@ -30,9 +30,26 @@ service cloud.firestore {
       }
     }
 
+    // Las busquedas si las administra el usuario desde el panel. Se valida
+    // la forma porque el scraper depende de ella para correr.
+    function validSearch() {
+      let d = request.resource.data;
+      return d.label is string
+        && d.label.size() > 0 && d.label.size() <= 60
+        && d.queries is list
+        && d.queries.size() > 0 && d.queries.size() <= 10
+        && d.enabled is bool
+        && d.match is map
+        && d.match.requireAll is list
+        && d.match.requireAll.size() <= 10
+        && d.match.exclude is list
+        && d.match.exclude.size() <= 30;
+    }
+
     match /searches/{searchId} {
       allow read: if isAllowed();
-      allow write: if false;
+      allow create, update: if isAllowed() && validSearch();
+      allow delete: if isAllowed();
     }
 
     match /runs/{runId} {

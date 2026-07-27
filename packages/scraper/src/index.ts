@@ -6,11 +6,12 @@
  *   npm run scrape -- --stores=easy     limita las tiendas
  *   npm run scrape -- --limit=20        resultados por consulta
  */
-import { enabledSearches, SEARCHES } from './config/searches.js';
+import { SEARCHES } from './config/searches.js';
 import { resolveStores } from './config/stores.js';
 import { runScrape, buildSummary } from './pipeline/run.js';
-import { persistOffers, saveRunSummary, syncSearches } from './pipeline/persist.js';
+import { persistOffers, saveRunSummary, markSearchesRun } from './pipeline/persist.js';
 import { getDb } from './firestore/client.js';
+import { bootstrapSearches, loadSearches } from './firestore/searches.js';
 import type { NormalizedOffer, SearchDefinition } from './types.js';
 
 interface CliOptions {
@@ -65,20 +66,46 @@ function log(msg: string, extra?: Record<string, unknown>): void {
   }
 }
 
-function selectSearches(ids: string[] | null): SearchDefinition[] {
-  if (!ids || ids.length === 0) return enabledSearches();
+function selectSearches(available: SearchDefinition[], ids: string[] | null): SearchDefinition[] {
+  if (!ids || ids.length === 0) return available.filter((search) => search.enabled);
 
   const wanted = new Set(ids.map((id) => id.trim()).filter(Boolean));
-  const selected = SEARCHES.filter((search) => wanted.has(search.id));
+  const selected = available.filter((search) => wanted.has(search.id));
 
-  const unknown = [...wanted].filter((id) => !SEARCHES.some((s) => s.id === id));
+  const unknown = [...wanted].filter((id) => !available.some((s) => s.id === id));
   if (unknown.length > 0) {
     throw new Error(
-      `Busqueda(s) desconocida(s): ${unknown.join(', ')}. Disponibles: ${SEARCHES.map((s) => s.id).join(', ')}`,
+      `Busqueda(s) desconocida(s): ${unknown.join(', ')}. ` +
+        `Disponibles: ${available.map((s) => s.id).join(', ')}`,
     );
   }
 
   return selected;
+}
+
+/**
+ * Trae las busquedas desde Firestore, que es donde las administra el usuario
+ * desde el panel. Si no hay credenciales o la coleccion falla, cae a las
+ * definiciones del codigo para que un dry-run siga siendo util.
+ */
+async function fetchSearches(): Promise<SearchDefinition[]> {
+  try {
+    const db = getDb();
+    const created = await bootstrapSearches(db);
+    if (created > 0) log(`Coleccion vacia: se sembraron ${created} busquedas de ejemplo`);
+
+    const searches = await loadSearches(db);
+    if (searches.length > 0) return searches;
+
+    log('No hay busquedas en Firestore; se usan las del codigo');
+  } catch (error) {
+    log(
+      `No se pudieron leer las busquedas de Firestore, se usan las del codigo: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  return SEARCHES;
 }
 
 const CLP = new Intl.NumberFormat('es-CL', {
@@ -106,7 +133,12 @@ function printOffers(offers: NormalizedOffer[]): void {
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const stores = resolveStores(options.stores);
-  const searches = selectSearches(options.searches);
+  const searches = selectSearches(await fetchSearches(), options.searches);
+
+  if (searches.length === 0) {
+    log('No hay busquedas activas. Crea una desde el panel y vuelve a ejecutar.');
+    return;
+  }
 
   log(
     `Iniciando corrida: ${stores.length} tienda(s) [${stores.map((s) => s.id).join(', ')}], ` +
@@ -145,9 +177,9 @@ async function main(): Promise<void> {
   }
 
   const db = getDb();
-  await syncSearches(db, SEARCHES);
-
   const now = new Date();
+
+  await markSearchesRun(db, searches, now);
   const stats = await persistOffers(db, result.offers, result.runId, now);
 
   const summary = buildSummary(

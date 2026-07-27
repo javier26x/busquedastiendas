@@ -1,5 +1,5 @@
 /**
- * Siembra Firestore con las busquedas y un set de productos de ejemplo.
+ * Siembra Firestore con las busquedas de ejemplo y un set de productos.
  *
  * Sirve para dejar el panel navegable antes de la primera corrida real
  * (util para verificar login, reglas y ordenamientos). Los productos quedan
@@ -7,10 +7,10 @@
  *
  *   npm run seed
  */
-import { SEARCHES, enabledSearches } from './config/searches.js';
 import { resolveStores } from './config/stores.js';
 import { getDb } from './firestore/client.js';
-import { persistOffers, saveRunSummary, syncSearches } from './pipeline/persist.js';
+import { bootstrapSearches, loadSearches } from './firestore/searches.js';
+import { persistOffers, saveRunSummary } from './pipeline/persist.js';
 import { buildSummary, runScrape } from './pipeline/run.js';
 
 function log(msg: string): void {
@@ -20,13 +20,23 @@ function log(msg: string): void {
 async function main(): Promise<void> {
   const db = getDb();
 
-  log('Sincronizando definiciones de busqueda...');
-  await syncSearches(db, SEARCHES);
+  const created = await bootstrapSearches(db);
+  log(
+    created > 0
+      ? `Sembradas ${created} busquedas de ejemplo`
+      : 'Ya habia busquedas: no se toca ninguna',
+  );
+
+  const searches = (await loadSearches(db)).filter((search) => search.enabled);
+  if (searches.length === 0) {
+    log('No hay busquedas activas; nada que sembrar.');
+    return;
+  }
 
   log('Cargando productos de ejemplo desde fixtures...');
   const result = await runScrape({
     stores: resolveStores(['fixture']),
-    searches: enabledSearches(),
+    searches,
     limit: 50,
     dryRun: false,
     log: (msg) => log(msg),

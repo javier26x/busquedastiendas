@@ -32,7 +32,12 @@ export interface Product {
 export interface SearchDoc {
   id: string;
   label: string;
+  /** Terminos que se consultan en cada tienda. */
+  queries: string[];
+  /** Reglas con las que el scraper descarta resultados irrelevantes. */
+  match: { requireAll: string[][]; exclude: string[] };
   enabled: boolean;
+  lastRunAt: Date | null;
 }
 
 export interface PricePoint {
