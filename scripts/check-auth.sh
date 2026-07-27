@@ -151,7 +151,8 @@ if command -v gcloud >/dev/null 2>&1; then
   if [ -n "${TOKEN}" ]; then
     CFG="$(curl -sS --max-time 20 \
       "https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT_ID}/config" \
-      -H "Authorization: Bearer ${TOKEN}" 2>/dev/null)"
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "x-goog-user-project: ${PROJECT_ID}" 2>/dev/null)"
 
     if printf '%s' "${CFG}" | grep -q '"authorizedDomains"'; then
       ok "Authentication activo"
@@ -159,7 +160,8 @@ if command -v gcloud >/dev/null 2>&1; then
 
       PROVIDERS="$(curl -sS --max-time 20 \
         "https://identitytoolkit.googleapis.com/admin/v2/projects/${PROJECT_ID}/defaultSupportedIdpConfigs" \
-        -H "Authorization: Bearer ${TOKEN}" 2>/dev/null)"
+        -H "Authorization: Bearer ${TOKEN}" \
+      -H "x-goog-user-project: ${PROJECT_ID}" 2>/dev/null)"
       if printf '%s' "${PROVIDERS}" | grep -q 'google.com'; then
         ok "proveedor Google configurado"
       else
@@ -167,9 +169,23 @@ if command -v gcloud >/dev/null 2>&1; then
         info "  https://console.firebase.google.com/project/${PROJECT_ID}/authentication/providers"
       fi
     else
-      bad "Authentication NO esta activado todavia"
-      info "  https://console.firebase.google.com/project/${PROJECT_ID}/authentication/providers"
-      info "  Comenzar -> Google -> Habilitar -> correo de soporte -> Guardar"
+      # No damos por hecho que este desactivado: la misma llamada falla por
+      # otros motivos (falta de proyecto de cuota, permisos), y confundirlos
+      # manda a buscar el problema al lugar equivocado.
+      CFG_MSG="$(printf '%s' "${CFG}" | grep -oE '"message": *"[^"]*"' | head -1 | cut -d'"' -f4)"
+      case "${CFG_MSG}" in
+        *"quota project"*)
+          bad "no se pudo consultar Auth: falta proyecto de cuota en tus credenciales"
+          info "  gcloud auth application-default set-quota-project ${PROJECT_ID}" ;;
+        *permission*|*Permission*|*PERMISSION*)
+          bad "no se pudo consultar Auth: sin permisos"
+          info "  ${CFG_MSG}" ;;
+        *)
+          bad "Authentication NO esta activado todavia"
+          info "  https://console.firebase.google.com/project/${PROJECT_ID}/authentication/providers"
+          info "  Comenzar -> Google -> Habilitar -> correo de soporte -> Guardar"
+          [ -n "${CFG_MSG}" ] && info "  (respuesta: ${CFG_MSG})" ;;
+      esac
     fi
   fi
 fi

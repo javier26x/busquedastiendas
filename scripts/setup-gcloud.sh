@@ -197,7 +197,8 @@ AUTH_PENDING=0
 # de nada reintentar: hay que activarlo a mano una unica vez.
 CONFIG_CODE="$(curl -sS -o /tmp/idt-config.json -w '%{http_code}' \
   "${IDT}/admin/v2/projects/${PROJECT_ID}/config" \
-  -H "Authorization: Bearer ${TOKEN}")"
+  -H "Authorization: Bearer ${TOKEN}" \
+      -H "x-goog-user-project: ${PROJECT_ID}")"
 
 if [ "${CONFIG_CODE}" != "200" ]; then
   AUTH_PENDING=1
@@ -224,6 +225,7 @@ else
       code="$(curl -sS -o /tmp/idt-domains.json -w '%{http_code}' -X PATCH \
         "${IDT}/admin/v2/projects/${PROJECT_ID}/config?updateMask=authorizedDomains" \
         -H "Authorization: Bearer ${TOKEN}" \
+      -H "x-goog-user-project: ${PROJECT_ID}" \
         -H "Content-Type: application/json" \
         -d "{\"authorizedDomains\":${AUTH_DOMAINS}}")"
       [ "${code}" = "200" ]
@@ -244,6 +246,7 @@ if [ "${AUTH_PENDING}" -eq 0 ]; then
   GOOGLE_CODE="$(curl -sS -o /tmp/idt-google.json -w '%{http_code}' -X POST \
     "${IDT}/admin/v2/projects/${PROJECT_ID}/defaultSupportedIdpConfigs?idpId=google.com" \
     -H "Authorization: Bearer ${TOKEN}" \
+      -H "x-goog-user-project: ${PROJECT_ID}" \
     -H "Content-Type: application/json" \
     -d '{"enabled":true}')"
 
@@ -289,6 +292,7 @@ gcloud firestore databases describe --database='(default)' \
 if [ "${AUTH_PENDING}" -eq 0 ]; then
   curl -sS "${IDT}/admin/v2/projects/${PROJECT_ID}/config" \
     -H "Authorization: Bearer ${TOKEN}" \
+      -H "x-goog-user-project: ${PROJECT_ID}" \
     | grep -o '"authorizedDomains":\[[^]]*\]' \
     | sed 's/^/    Auth: /' || warn "no se pudo leer la config de Auth"
 else

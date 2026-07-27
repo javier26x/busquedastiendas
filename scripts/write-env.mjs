@@ -26,7 +26,12 @@ if (!TOKEN || !PROJECT_ID) {
 
 async function api(path) {
   const response = await fetch(`${API}${path}`, {
-    headers: { Authorization: `Bearer ${TOKEN}` },
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+      // Las credenciales por defecto (Cloud Shell, gcloud) no traen proyecto
+      // de cuota asociado, y sin esta cabecera la API responde 403.
+      'x-goog-user-project': PROJECT_ID,
+    },
   });
   const body = await response.text();
 
@@ -104,7 +109,11 @@ if (!/^AIza[\w-]{35}$/.test(config.apiKey)) {
 
 main().catch((error) => {
   console.error(`\nNo se pudo generar .env.local:\n  ${error.message}\n`);
-  if (String(error.message).includes('HTTP 401') || String(error.message).includes('HTTP 403')) {
+  const text = String(error.message);
+  if (text.includes('quota project')) {
+    console.error('Falta asociar un proyecto de cuota a tus credenciales:');
+    console.error(`  gcloud auth application-default set-quota-project ${PROJECT_ID}`);
+  } else if (text.includes('HTTP 401') || text.includes('HTTP 403')) {
     console.error('Revisa que gcloud este autenticado como el dueno del proyecto:');
     console.error('  gcloud auth login');
   }
