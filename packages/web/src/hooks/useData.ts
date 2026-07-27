@@ -9,6 +9,7 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { getDb } from '../firebase.js';
+import { deserializeMatchRules } from '../lib/searchRules.js';
 import type { Product, PricePoint, RunDoc, SearchDoc } from '../types.js';
 
 /** Tope defensivo: el panel ordena en memoria, no queremos traer de mas. */
@@ -60,16 +61,11 @@ function toProduct(id: string, data: DocumentData): Product {
 }
 
 function toSearch(id: string, data: DocumentData): SearchDoc {
-  const match = (data['match'] ?? {}) as Record<string, unknown>;
-
   return {
     id,
     label: String(data['label'] ?? id),
     queries: Array.isArray(data['queries']) ? (data['queries'] as string[]) : [],
-    match: {
-      requireAll: Array.isArray(match['requireAll']) ? (match['requireAll'] as string[][]) : [],
-      exclude: Array.isArray(match['exclude']) ? (match['exclude'] as string[]) : [],
-    },
+    match: deserializeMatchRules(data['match']),
     enabled: data['enabled'] !== false,
     lastRunAt: toDate(data['lastRunAt']),
   };

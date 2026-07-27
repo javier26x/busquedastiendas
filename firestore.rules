@@ -40,6 +40,8 @@ service cloud.firestore {
         && d.queries.size() > 0 && d.queries.size() <= 10
         && d.enabled is bool
         && d.match is map
+        // Cada grupo va como { anyOf: [...] }: Firestore no admite
+        // arreglos anidados.
         && d.match.requireAll is list
         && d.match.requireAll.size() <= 10
         && d.match.exclude is list

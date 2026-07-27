@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { collection, deleteDoc, doc, getDocs, query, serverTimestamp, setDoc, where, writeBatch } from 'firebase/firestore';
 import { getDb } from '../firebase.js';
-import type { SearchDraft } from '../lib/searchRules.js';
+import { serializeMatchRules, type SearchDraft } from '../lib/searchRules.js';
 
 /** Firestore limita a 500 operaciones por lote. */
 const BATCH_LIMIT = 400;
@@ -29,7 +29,8 @@ export function useSearchAdmin(): SearchAdmin {
           id: draft.id,
           label: draft.label.trim(),
           queries: draft.queries,
-          match: draft.match,
+          // Firestore no admite arreglos anidados: se guarda como { anyOf }.
+          match: serializeMatchRules(draft.match),
           enabled: draft.enabled,
           source: 'web',
           updatedAt: serverTimestamp(),

@@ -42,15 +42,38 @@ export function parseSearchDoc(id: string, data: Record<string, unknown>): Searc
   };
 }
 
-function parseMatchRules(value: unknown): MatchRules {
+/**
+ * Firestore no admite arreglos anidados, asi que cada grupo de `requireAll`
+ * se guarda envuelto en `{ anyOf: [...] }`. Se acepta tambien la forma
+ * anidada por si quedo algun documento de una version anterior.
+ */
+export function parseMatchRules(value: unknown): MatchRules {
   if (!value || typeof value !== 'object') return { requireAll: [], exclude: [] };
 
   const raw = value as Record<string, unknown>;
-  const requireAll = Array.isArray(raw['requireAll'])
-    ? raw['requireAll'].map((group) => asStringArray(group)).filter((group) => group.length > 0)
-    : [];
+  const groups = Array.isArray(raw['requireAll']) ? raw['requireAll'] : [];
+
+  const requireAll = groups
+    .map((group) => {
+      if (Array.isArray(group)) return asStringArray(group);
+      if (group && typeof group === 'object') {
+        return asStringArray((group as Record<string, unknown>)['anyOf']);
+      }
+      return [];
+    })
+    .filter((group) => group.length > 0);
 
   return { requireAll, exclude: asStringArray(raw['exclude']) };
+}
+
+/** Convierte las reglas al formato plano que acepta Firestore. */
+export function serializeMatchRules(rules: MatchRules): Record<string, unknown> {
+  return {
+    requireAll: rules.requireAll
+      .filter((group) => group.length > 0)
+      .map((group) => ({ anyOf: group })),
+    exclude: rules.exclude,
+  };
 }
 
 function asNonEmptyString(value: unknown): string | null {
@@ -85,7 +108,7 @@ export async function bootstrapSearches(db: Firestore): Promise<number> {
       id: search.id,
       label: search.label,
       queries: search.queries,
-      match: search.match,
+      match: serializeMatchRules(search.match),
       enabled: search.enabled,
       source: 'semilla',
       createdAt: now,

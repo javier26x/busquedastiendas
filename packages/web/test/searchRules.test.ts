@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   deriveMatchRules,
+  deserializeMatchRules,
+  serializeMatchRules,
   parseQueries,
   rulesToText,
   significantWords,
@@ -106,4 +108,43 @@ test('validateDraft pone techo a los terminos, porque cada uno cuesta una consul
 
   assert.equal(result.ok, false);
   assert.ok(result.errors.some((error) => error.includes('Maximo 10 terminos')));
+});
+
+test('las reglas se guardan sin arreglos anidados: Firestore los rechaza', () => {
+  const rules = { requireAll: [['bodega', 'caseta'], ['jardin']], exclude: ['vino'] };
+  const stored = serializeMatchRules(rules);
+
+  assert.deepEqual(stored, {
+    requireAll: [{ anyOf: ['bodega', 'caseta'] }, { anyOf: ['jardin'] }],
+    exclude: ['vino'],
+  });
+
+  // La comprobacion que importa: ningun elemento de un arreglo es otro arreglo.
+  for (const group of stored.requireAll) {
+    assert.ok(!Array.isArray(group), 'requireAll no puede contener arreglos');
+  }
+});
+
+test('serializar y deserializar deja las reglas igual', () => {
+  const rules = { requireAll: [['bodega', 'caseta'], ['jardin']], exclude: ['vino', 'juguete'] };
+
+  assert.deepEqual(deserializeMatchRules(serializeMatchRules(rules)), rules);
+});
+
+test('deserializeMatchRules acepta la forma anidada de la version anterior', () => {
+  const legacy = { requireAll: [['bodega'], ['jardin']], exclude: ['vino'] };
+
+  assert.deepEqual(deserializeMatchRules(legacy), {
+    requireAll: [['bodega'], ['jardin']],
+    exclude: ['vino'],
+  });
+});
+
+test('deserializeMatchRules tolera documentos sin match o con basura', () => {
+  const vacio = { requireAll: [], exclude: [] };
+
+  assert.deepEqual(deserializeMatchRules(undefined), vacio);
+  assert.deepEqual(deserializeMatchRules(null), vacio);
+  assert.deepEqual(deserializeMatchRules('texto'), vacio);
+  assert.deepEqual(deserializeMatchRules({ requireAll: [{}, { anyOf: [] }, 3], exclude: [7] }), vacio);
 });

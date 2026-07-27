@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { buildRecord } from '../src/pipeline/diff.js';
 import { mergeOffers, normalizeOffers, productKey } from '../src/pipeline/normalize.js';
 import { getSearch } from '../src/config/searches.js';
+import { parseSearchDoc, parseMatchRules, serializeMatchRules } from '../src/firestore/searches.js';
 import type { NormalizedOffer, ProductRecord, RawOffer, StoreAdapter } from '../src/types.js';
 
 const T0 = new Date('2026-07-01T10:00:00Z');
@@ -186,4 +187,47 @@ test('el registro persistido conserva la tienda declarada por la oferta', () => 
 
   assert.equal(record.storeId, 'paris');
   assert.equal(record.storeLabel, 'Paris');
+});
+
+test('el scraper lee las reglas guardadas como { anyOf }, sin arreglos anidados', () => {
+  const stored = {
+    label: 'Panales',
+    queries: ['panales'],
+    match: {
+      requireAll: [{ anyOf: ['panal'] }, { anyOf: ['talla', 'pack'] }],
+      exclude: ['juguete'],
+    },
+    enabled: true,
+  };
+
+  const parsed = parseSearchDoc('panales', stored);
+
+  assert.ok(parsed);
+  assert.deepEqual(parsed.match.requireAll, [['panal'], ['talla', 'pack']]);
+  assert.deepEqual(parsed.match.exclude, ['juguete']);
+});
+
+test('parseSearchDoc descarta documentos sin terminos, que no se pueden consultar', () => {
+  assert.equal(parseSearchDoc('x', { label: 'X', queries: [] }), null);
+  assert.equal(parseSearchDoc('x', { label: 'X' }), null);
+});
+
+test('parseSearchDoc sobrevive a un match ausente o malformado', () => {
+  const parsed = parseSearchDoc('x', { label: 'X', queries: ['algo'], match: 'basura' });
+
+  assert.ok(parsed);
+  assert.deepEqual(parsed.match, { requireAll: [], exclude: [] });
+});
+
+test('las reglas del codigo se serializan sin arreglos anidados', () => {
+  const search = getSearch('bodegas-jardin');
+  assert.ok(search);
+
+  const stored = serializeMatchRules(search.match) as { requireAll: unknown[] };
+
+  for (const group of stored.requireAll) {
+    assert.ok(!Array.isArray(group), 'Firestore rechazaria un arreglo dentro de otro');
+  }
+  // Y el scraper vuelve a leer exactamente lo mismo.
+  assert.deepEqual(parseMatchRules(stored).requireAll, search.match.requireAll);
 });

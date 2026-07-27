@@ -16,6 +16,54 @@ export interface MatchRules {
   exclude: string[];
 }
 
+/**
+ * Forma con la que las reglas viajan a Firestore.
+ *
+ * `requireAll` es conceptualmente una lista de listas, pero Firestore no
+ * admite arreglos anidados. Cada grupo se envuelve en un objeto `{ anyOf }`,
+ * que ademas se lee mejor en la consola que un separador improvisado.
+ */
+export interface StoredMatchRules {
+  requireAll: { anyOf: string[] }[];
+  exclude: string[];
+}
+
+export function serializeMatchRules(rules: MatchRules): StoredMatchRules {
+  return {
+    requireAll: rules.requireAll
+      .filter((group) => group.length > 0)
+      .map((group) => ({ anyOf: group })),
+    exclude: rules.exclude,
+  };
+}
+
+/** Acepta la forma actual y la anidada que uso una version anterior. */
+export function deserializeMatchRules(value: unknown): MatchRules {
+  if (!value || typeof value !== 'object') return { requireAll: [], exclude: [] };
+
+  const raw = value as Record<string, unknown>;
+  const groups = Array.isArray(raw['requireAll']) ? raw['requireAll'] : [];
+
+  const requireAll = groups
+    .map((group) => {
+      if (Array.isArray(group)) return group.filter(isNonEmptyString);
+      if (group && typeof group === 'object') {
+        const anyOf = (group as Record<string, unknown>)['anyOf'];
+        return Array.isArray(anyOf) ? anyOf.filter(isNonEmptyString) : [];
+      }
+      return [];
+    })
+    .filter((group) => group.length > 0);
+
+  const exclude = Array.isArray(raw['exclude']) ? raw['exclude'].filter(isNonEmptyString) : [];
+
+  return { requireAll, exclude };
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 export interface SearchDraft {
   id: string;
   label: string;
