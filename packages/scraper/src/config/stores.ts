@@ -105,10 +105,13 @@ export const STORES: StoreAdapter[] = [
   // IKEA Chile lo opera Falabella, asi que lo mas probable es que comparta
   // plataforma con las dos que si funcionan. Se prueban esa ruta primero y
   // el sitio global de IKEA despues.
+  // ikea.cl responde 403 a todo y no esta en la plataforma de Falabella
+  // (404). Solo ikea.com/cl/es responde, sin datos estructurados.
   createHtmlSearchAdapter({
     id: 'ikea',
     label: 'IKEA',
     base: 'https://www.ikea.cl',
+    enabled: false,
     buildUrls: (q) => [
       `https://www.ikea.cl/ikea-cl/search?Ntt=${enc(q)}`,
       `https://www.falabella.com/ikea-cl/search?Ntt=${enc(q)}`,
@@ -161,12 +164,13 @@ export const STORES: StoreAdapter[] = [
   }),
 
   // --- Otras tiendas -------------------------------------------------------
-  // simple.ripley.cl devolvia 403 en todo. Se reintenta por el dominio
-  // principal, que puede tener otras defensas, y con la estrategia por DOM.
+  // 403 en ambos dominios y con las tres estrategias. El bloqueo es por
+  // reputacion de IP, no por ruta.
   createUnknownPlatformStore({
     id: 'ripley',
     label: 'Ripley',
     host: 'www.ripley.cl',
+    enabled: false,
     paths: (q) => [
       `https://www.ripley.cl/search/${enc(q)}`,
       `https://www.ripley.cl/search?q=${enc(q)}`,

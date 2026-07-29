@@ -327,9 +327,32 @@ async function probe(entry: Probe, query: string): Promise<void> {
     const first = $(target).first();
 
     if (first.length > 0) {
-      console.log(`    HTML de la primera coincidencia de ${target}:`);
-      const html = $.html(first).replace(/>\s+</g, '>\n<');
-      console.log(indent(html, 6, 2200));
+      // Anatomia de la tarjeta: es lo que decide si se puede extraer o no.
+      // Volcar el HTML crudo suele cortarse antes de lo que importa.
+      const anchors = first.find('a[href]').toArray();
+      const prices = first
+        .find('[data-testid*="price" i], [class*="price" i], [class*="precio" i]')
+        .toArray();
+      const texts = first
+        .find('*')
+        .toArray()
+        .map((node) => $(node).text().replace(/\s+/g, ' ').trim())
+        .filter((text) => text.length >= 8 && text.length <= 120);
+
+      console.log(`    anatomia de ${target}:`);
+      console.log(`      enlaces a[href]: ${anchors.length}`);
+      for (const anchor of anchors.slice(0, 3)) {
+        console.log(`        href="${$(anchor).attr('href')}"  texto="${$(anchor).text().trim().slice(0, 60)}"`);
+      }
+      console.log(`      elementos con precio: ${prices.length}`);
+      for (const node of prices.slice(0, 4)) {
+        console.log(
+          `        [${$(node).attr('data-testid') ?? $(node).attr('class')?.slice(0, 30)}] "${$(node).text().trim().slice(0, 40)}"`,
+        );
+      }
+      console.log(`      encabezados h1-h4: ${first.find('h1, h2, h3, h4').length}`);
+      console.log('      textos cortos (candidatos a titulo):');
+      for (const text of [...new Set(texts)].slice(-4)) console.log(`        "${text}"`);
     } else {
       console.log(`    ${target} no coincidio con nada`);
     }
