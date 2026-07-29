@@ -15,6 +15,16 @@ const enc = encodeURIComponent;
  * varias rutas candidatas (incluida la de VTEX `?map=ft`). Asi una
  * suposicion equivocada sobre la plataforma no deja la tienda fuera.
  */
+/** Contenedores de tarjeta habituales, para el ultimo recurso por DOM. */
+const GENERIC_CARD_SELECTORS = [
+  '[data-testid*="pod"]',
+  '[data-testid*="product-card"]',
+  '[data-cnstrc-item="Product"]',
+  'article[class*="product" i]',
+  'li[class*="product" i]',
+  'div[class*="product-card" i]',
+];
+
 function createUnknownPlatformStore(config: {
   id: string;
   label: string;
@@ -24,6 +34,14 @@ function createUnknownPlatformStore(config: {
   enabled?: boolean;
 }): StoreAdapter {
   const base = `https://${config.host}`;
+
+  const buildUrls = (q: string): string[] => [
+    ...(config.paths?.(q) ?? []),
+    // Rutas genericas de las plataformas mas usadas en retail chileno.
+    `${base}/${enc(q)}?map=ft`, // VTEX
+    `${base}/search?q=${enc(q)}`,
+    `${base}/catalogsearch/result/?q=${enc(q)}`, // Magento
+  ];
 
   return createFallbackAdapter({
     id: config.id,
@@ -35,13 +53,17 @@ function createUnknownPlatformStore(config: {
         id: `${config.id}-html`,
         label: config.label,
         base,
-        buildUrls: (q) => [
-          ...(config.paths?.(q) ?? []),
-          // Rutas genericas de las plataformas mas usadas en retail chileno.
-          `${base}/${enc(q)}?map=ft`, // VTEX
-          `${base}/search?q=${enc(q)}`,
-          `${base}/catalogsearch/result/?q=${enc(q)}`, // Magento
-        ],
+        buildUrls,
+      }),
+      // Ultimo recurso: los productos estan en el DOM y no en un JSON, como
+      // le pasa a Paris. Vale la pena intentarlo antes de dar la tienda por
+      // perdida.
+      createDomCardsAdapter({
+        id: `${config.id}-dom`,
+        label: config.label,
+        base,
+        buildUrls,
+        cardSelectors: GENERIC_CARD_SELECTORS,
       }),
     ],
   });
@@ -78,6 +100,26 @@ export const STORES: StoreAdapter[] = [
     buildProductUrl: (node) => {
       const id = node['productId'] ?? node['skuId'];
       return typeof id === 'string' && id ? `https://www.sodimac.cl/sodimac-cl/product/${id}/` : null;
+    },
+  }),
+  // IKEA Chile lo opera Falabella, asi que lo mas probable es que comparta
+  // plataforma con las dos que si funcionan. Se prueban esa ruta primero y
+  // el sitio global de IKEA despues.
+  createHtmlSearchAdapter({
+    id: 'ikea',
+    label: 'IKEA',
+    base: 'https://www.ikea.cl',
+    buildUrls: (q) => [
+      `https://www.ikea.cl/ikea-cl/search?Ntt=${enc(q)}`,
+      `https://www.falabella.com/ikea-cl/search?Ntt=${enc(q)}`,
+      `https://www.ikea.cl/search?q=${enc(q)}`,
+      `https://www.ikea.com/cl/es/search/?q=${enc(q)}`,
+    ],
+    // Si resulta ser la plataforma de Falabella, los productos vendran sin
+    // campo `url`, igual que en Sodimac.
+    buildProductUrl: (node) => {
+      const id = node['productId'] ?? node['skuId'];
+      return typeof id === 'string' && id ? `https://www.ikea.cl/ikea-cl/product/${id}/` : null;
     },
   }),
   createHtmlSearchAdapter({
@@ -119,15 +161,16 @@ export const STORES: StoreAdapter[] = [
   }),
 
   // --- Otras tiendas -------------------------------------------------------
-  // Bloqueada por WAF: 403 en todas sus rutas.
+  // simple.ripley.cl devolvia 403 en todo. Se reintenta por el dominio
+  // principal, que puede tener otras defensas, y con la estrategia por DOM.
   createUnknownPlatformStore({
     id: 'ripley',
     label: 'Ripley',
-    host: 'simple.ripley.cl',
-    enabled: false,
+    host: 'www.ripley.cl',
     paths: (q) => [
+      `https://www.ripley.cl/search/${enc(q)}`,
+      `https://www.ripley.cl/search?q=${enc(q)}`,
       `https://simple.ripley.cl/search/${enc(q)}`,
-      `https://simple.ripley.cl/search?q=${enc(q)}`,
     ],
   }),
   // Responde 200 pero sirve una pagina anti-bot, sin productos.

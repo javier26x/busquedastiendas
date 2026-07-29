@@ -33,6 +33,31 @@ const PROBES: Probe[] = [
     url: (q) => `https://www.falabella.com/falabella-cl/search?Ntt=${encodeURIComponent(q)}`,
   },
   {
+    store: 'ikea',
+    label: 'plataforma Falabella (ikea.cl lo opera Falabella)',
+    url: (q) => `https://www.ikea.cl/ikea-cl/search?Ntt=${encodeURIComponent(q)}`,
+  },
+  {
+    store: 'ikea',
+    label: 'busqueda propia',
+    url: (q) => `https://www.ikea.cl/search?q=${encodeURIComponent(q)}`,
+  },
+  {
+    store: 'ikea',
+    label: 'sitio global de IKEA',
+    url: (q) => `https://www.ikea.com/cl/es/search/?q=${encodeURIComponent(q)}`,
+  },
+  {
+    store: 'ripley',
+    label: 'dominio principal',
+    url: (q) => `https://www.ripley.cl/search/${encodeURIComponent(q)}`,
+  },
+  {
+    store: 'ripley',
+    label: 'simple.ripley.cl (daba 403)',
+    url: (q) => `https://simple.ripley.cl/search/${encodeURIComponent(q)}`,
+  },
+  {
     store: 'paris',
     label: 'responde 200 sin datos reconocidos',
     url: (q) => `https://www.paris.cl/search/?q=${encodeURIComponent(q)}`,
