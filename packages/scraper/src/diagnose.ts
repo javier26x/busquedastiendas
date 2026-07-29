@@ -62,17 +62,23 @@ const PROBES: Probe[] = [
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
-function parseArgs(argv: string[]): { query: string; store: string | null } {
+function parseArgs(argv: string[]): { query: string; store: string | null; dump: string | null } {
   let query = 'caja organizadora';
   let store: string | null = null;
+  let dump: string | null = null;
 
   for (const arg of argv) {
     if (arg.startsWith('--query=')) query = arg.slice('--query='.length);
     else if (arg.startsWith('--store=')) store = arg.slice('--store='.length);
+    // Vuelca el HTML de un selector concreto, para afinar un adaptador.
+    else if (arg.startsWith('--dump=')) dump = arg.slice('--dump='.length);
   }
 
-  return { query, store };
+  return { query, store, dump };
 }
+
+/** Selector cuyo HTML se quiere ver; lo fija `--dump=`. */
+let dumpSelector: string | null = null;
 
 /** Describe donde hay arreglos grandes dentro de un JSON, para ubicar los productos. */
 function describeArrays(value: unknown, path = '$', depth = 0, found: string[] = []): string[] {
@@ -289,6 +295,19 @@ async function probe(entry: Probe, query: string): Promise<void> {
   if (repeated.length > 0) {
     console.log('    data-testid repetidos (candidatos a tarjeta de producto):');
     for (const [id, count] of repeated) console.log(`      ${id} × ${count}`);
+
+    // El HTML de una tarjeta real: sin verlo no se puede escribir el selector
+    // del titulo, el enlace y el precio, solo suponerlo.
+    const target = dumpSelector ?? `[data-testid^="${repeated[0]?.[0] ?? ''}"]`;
+    const first = $(target).first();
+
+    if (first.length > 0) {
+      console.log(`    HTML de la primera coincidencia de ${target}:`);
+      const html = $.html(first).replace(/>\s+</g, '>\n<');
+      console.log(indent(html, 6, 2200));
+    } else {
+      console.log(`    ${target} no coincidio con nada`);
+    }
   }
 
   const selectors = [
@@ -310,7 +329,8 @@ async function probe(entry: Probe, query: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const { query, store } = parseArgs(process.argv.slice(2));
+  const { query, store, dump } = parseArgs(process.argv.slice(2));
+  dumpSelector = dump;
   const selected = store ? PROBES.filter((entry) => entry.store === store) : PROBES;
 
   if (selected.length === 0) {

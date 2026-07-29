@@ -44,7 +44,11 @@ export const SEARCHES: SearchDefinition[] = [
       ],
       exclude: [
         'caja fuerte',
-        'caja de herramientas',
+        // "herramienta" a secas: "caja de herramientas" no atrapaba
+        // "Caja herramientas plastica", que es el titulo que usa Sodimac.
+        'herramienta',
+        'destornillador',
+        'atornillador',
         'caja de carton',
         'caja registradora',
         'caja de cambios',

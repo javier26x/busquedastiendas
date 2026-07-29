@@ -1,6 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import type { MatchRules, SearchDefinition } from '../types.js';
 import { SEARCHES as CODE_SEARCHES } from '../config/searches.js';
+import { normalizeText } from '../lib/text.js';
 import { COLLECTIONS } from '../pipeline/persist.js';
 
 /**
@@ -33,13 +34,68 @@ export function parseSearchDoc(id: string, data: Record<string, unknown>): Searc
 
   if (queries.length === 0) return null;
 
+  const stored = parseMatchRules(data['match']);
+
   return {
     id,
     label,
     queries,
-    match: parseMatchRules(data['match']),
+    // Una busqueda sin reglas acepta cualquier titulo que devuelva la tienda
+    // y contamina el panel con productos ajenos. Nunca se deja sin filtro.
+    match: stored.requireAll.length > 0 ? stored : fallbackMatchRules(id, label, stored.exclude),
     enabled: data['enabled'] !== false,
   };
+}
+
+/**
+ * Reglas para una busqueda guardada sin ellas.
+ *
+ * Se prefieren las curadas del codigo cuando el id coincide, porque son mas
+ * ricas que lo que se puede deducir de un nombre. Si no, se derivan del
+ * nombre igual que hace el panel al crear una busqueda.
+ */
+function fallbackMatchRules(id: string, label: string, exclude: string[]): MatchRules {
+  const known = CODE_SEARCHES.find((search) => search.id === id);
+  if (known) {
+    return {
+      requireAll: known.match.requireAll,
+      exclude: exclude.length > 0 ? exclude : known.match.exclude,
+    };
+  }
+
+  return { requireAll: deriveRequireAll(label), exclude };
+}
+
+/** Palabras sin valor para discriminar un titulo. */
+const STOPWORDS = new Set([
+  'de', 'del', 'la', 'las', 'el', 'los', 'un', 'una', 'unos', 'unas',
+  'para', 'con', 'sin', 'y', 'o', 'en', 'por', 'a', 'al', 'que',
+]);
+
+/**
+ * Cada palabra significativa del nombre pasa a ser un requisito, usando su
+ * raiz para que el singular tambien calce. Es la misma regla que aplica el
+ * panel; aqui existe para los documentos que se guardaron sin ella.
+ */
+export function deriveRequireAll(label: string): string[][] {
+  const words = [
+    ...new Set(
+      normalizeText(label)
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter((word) => word.length > 1 && !STOPWORDS.has(word)),
+    ),
+  ];
+
+  return words.map((word) => [stemWord(word)]);
+}
+
+function stemWord(word: string): string {
+  if (word.length <= 4) return word;
+  if (word.endsWith('ces')) return `${word.slice(0, -3)}z`;
+  if (word.endsWith('es')) return word.slice(0, -2);
+  if (word.endsWith('s')) return word.slice(0, -1);
+  return word;
 }
 
 /**
