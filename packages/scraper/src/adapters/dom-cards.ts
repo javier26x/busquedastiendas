@@ -139,7 +139,10 @@ function cardToOffer(
   const price = unique[0];
   if (price === undefined) return null;
 
-  const listPrice = unique.length > 1 ? unique[unique.length - 1] ?? null : null;
+  const highest = unique.length > 1 ? (unique[unique.length - 1] ?? null) : null;
+  // Segunda red: si el "normal" implica una rebaja imposible, es basura.
+  const listPrice =
+    highest !== null && price >= highest * (1 - MAX_PLAUSIBLE_DISCOUNT) ? highest : null;
 
   const image =
     card.find('img').first().attr('src') ?? card.find('img').first().attr('data-src') ?? null;
@@ -175,10 +178,20 @@ export function extractPrices(text: string): number[] {
     });
   }
 
-  // Sin simbolo de moneda: el nodo suele traer solo la cifra.
+  // Sin simbolo de moneda solo se acepta un nodo que contenga la cifra y
+  // nada mas. Si no, las medidas del producto pasarian por precio: de
+  // "26x35x15 cm" salia un importe de $263.515.
+  if (!/^\s*\$?\s*\d{1,3}(?:\.\d{3})*\s*$/.test(text)) return [];
+
   const single = parseClp(text);
   return single === null ? [] : [single];
 }
+
+/**
+ * Un descuento asi de grande no existe en retail: viene de haber leido mal
+ * el precio normal. Se descarta en vez de mostrar una rebaja inventada.
+ */
+const MAX_PLAUSIBLE_DISCOUNT = 0.9;
 
 /**
  * Identificador estable derivado de la URL.

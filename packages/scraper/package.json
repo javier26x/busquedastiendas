@@ -10,7 +10,8 @@
     "seed": "tsx src/seed.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts",
-    "diagnose": "tsx src/diagnose.ts"
+    "diagnose": "tsx src/diagnose.ts",
+    "purge": "tsx src/purge.ts"
   },
   "dependencies": {
     "cheerio": "^1.2.0",

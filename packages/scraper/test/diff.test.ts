@@ -366,3 +366,45 @@ test('un contenedor con precios anidados no duplica ni concatena', () => {
   assert.equal(offers[0]?.price, 3990);
   assert.equal(offers[0]?.listPrice, 5990);
 });
+
+test('las medidas del producto no se leen como precio', () => {
+  // Sintoma real en IKEA: "26x35x15 cm" daba un precio normal de $263.515.
+  assert.deepEqual(extractPrices('SOCKERBIT Caja con tapa, blanco, 38x51x30 cm'), []);
+  assert.deepEqual(extractPrices('26x35x15 cm'), []);
+  assert.deepEqual(extractPrices('39x28x14 cm/11 l'), []);
+  assert.deepEqual(extractPrices('11 l'), []);
+});
+
+test('un nodo con solo la cifra si cuenta como precio', () => {
+  assert.deepEqual(extractPrices('3.990'), [3990]);
+  assert.deepEqual(extractPrices(' $ 1.990 '), [1990]);
+});
+
+test('un descuento imposible se descarta en vez de mostrarse', () => {
+  // Un precio normal 10 veces mayor no es una oferta: es un precio mal leido.
+  const $ = cheerio.load(`
+    <div data-testid="pod">
+      <a href="/producto/caja/p">Caja organizadora con tapa transparente</a>
+      <span class="price">$3.990</span>
+      <span class="price-x">$385.130</span>
+    </div>`);
+
+  const offers = extractDomCards($, 'https://x.cl', ['[data-testid="pod"]']);
+
+  assert.equal(offers[0]?.price, 3990);
+  assert.equal(offers[0]?.listPrice, null, 'no se inventa una rebaja del 99%');
+});
+
+test('una rebaja creible si se conserva', () => {
+  const $ = cheerio.load(`
+    <div data-testid="pod">
+      <a href="/producto/caja/p">Caja organizadora con tapa transparente</a>
+      <span class="price">$12.990</span>
+      <span class="price-normal">$19.990</span>
+    </div>`);
+
+  const offers = extractDomCards($, 'https://x.cl', ['[data-testid="pod"]']);
+
+  assert.equal(offers[0]?.price, 12990);
+  assert.equal(offers[0]?.listPrice, 19990);
+});

@@ -16,6 +16,7 @@
     "scrape": "npm run scrape --workspace @busquedastiendas/scraper --",
     "scrape:dry": "npm run scrape --workspace @busquedastiendas/scraper -- --dry-run",
     "diagnose": "npm run diagnose --workspace @busquedastiendas/scraper --",
+    "purge": "npm run purge --workspace @busquedastiendas/scraper --",
     "seed": "npm run seed --workspace @busquedastiendas/scraper",
     "dev": "npm run dev --workspace @busquedastiendas/web",
     "build": "npm run build --workspaces --if-present",
