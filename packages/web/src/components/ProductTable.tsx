@@ -13,6 +13,8 @@ interface Props {
   products: Product[];
   sortKey: SortKey;
   onSelect: (product: Product) => void;
+  /** Explicacion a mostrar cuando no hay nada que listar. */
+  emptyHint?: ReactNode;
 }
 
 /** Que columna resaltar segun el orden elegido. */
@@ -23,16 +25,20 @@ function highlightedColumn(sortKey: SortKey): 'precio' | 'variacion' | 'oferta' 
   return null;
 }
 
-export function ProductTable({ products, sortKey, onSelect }: Props): ReactNode {
+export function ProductTable({ products, sortKey, onSelect, emptyHint }: Props): ReactNode {
   const highlight = highlightedColumn(sortKey);
 
   if (products.length === 0) {
     return (
       <div className="empty">
-        <p className="empty__title">Sin resultados</p>
-        <p className="muted small">
-          Ajusta los filtros, o corre el scraper si todavia no hay datos cargados.
-        </p>
+        {emptyHint ?? (
+          <>
+            <p className="empty__title">Sin resultados</p>
+            <p className="muted small">
+              Ajusta los filtros, o corre el scraper si todavía no hay datos cargados.
+            </p>
+          </>
+        )}
       </div>
     );
   }

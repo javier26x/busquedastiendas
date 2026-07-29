@@ -128,7 +128,12 @@ function SearchList({
             <div className="search-list__main">
               <span className="search-list__label">{search.label}</span>
               <span className="muted small">
-                {counts.get(search.id) ?? 0} productos · {search.queries.length} término(s)
+                {search.lastRunAt === null ? (
+                  <span className="badge badge--pending">Pendiente de la primera corrida</span>
+                ) : (
+                  `${counts.get(search.id) ?? 0} productos`
+                )}{' '}
+                · {search.queries.length} término(s)
               </span>
               <span className="muted small search-list__queries">
                 {search.queries.join(' · ')}

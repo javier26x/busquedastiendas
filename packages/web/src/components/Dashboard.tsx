@@ -59,6 +59,14 @@ export function Dashboard(): ReactNode {
     return counts;
   }, [products.data]);
 
+  // Una busqueda recien creada no tiene productos hasta la proxima corrida
+  // del scraper. Sin decirlo, el 0 se lee como "no encontro nada".
+  const pendingSearch = useMemo(() => {
+    if (!filters.searchId) return null;
+    const search = searches.data.find((entry) => entry.id === filters.searchId);
+    return search && search.lastRunAt === null ? search : null;
+  }, [filters.searchId, searches.data]);
+
   // Las pausadas se administran pero no ocupan una pestana.
   const searchTabs = useMemo(
     () =>
@@ -149,7 +157,23 @@ export function Dashboard(): ReactNode {
             <div className="spinner" role="status" aria-label="Cargando productos" />
           </div>
         ) : (
-          <ProductTable products={visible} sortKey={sortKey} onSelect={setSelected} />
+          <ProductTable
+            products={visible}
+            sortKey={sortKey}
+            onSelect={setSelected}
+            emptyHint={
+              pendingSearch ? (
+                <>
+                  <p className="empty__title">"{pendingSearch.label}" aún no se ha consultado</p>
+                  <p className="muted small">
+                    Las búsquedas nuevas entran en la próxima corrida del scraper, que se ejecuta
+                    dos veces al día. También puedes lanzarla a mano desde la pestaña Actions de
+                    GitHub, o con <code>npm run scrape</code>.
+                  </p>
+                </>
+              ) : undefined
+            }
+          />
         )}
       </main>
 

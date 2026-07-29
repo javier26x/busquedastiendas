@@ -1203,3 +1203,8 @@ code {
   font-size: 0.85rem;
   border: 1px solid color-mix(in srgb, var(--up) 30%, transparent);
 }
+
+.badge--pending {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  color: var(--warn);
+}
