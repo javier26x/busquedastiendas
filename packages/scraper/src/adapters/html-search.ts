@@ -30,6 +30,8 @@ export interface HtmlStoreConfig {
   buildUrls: (query: string) => string[];
   /** Base para resolver enlaces relativos. */
   base: string;
+  /** Arma el enlace cuando la tienda no lo publica en su estado embebido. */
+  buildProductUrl?: (node: Record<string, unknown>) => string | null;
   enabled?: boolean;
 }
 
@@ -67,7 +69,9 @@ export function createHtmlSearchAdapter(config: HtmlStoreConfig): StoreAdapter {
         try {
           const html = await fetchHtml(url, { headers: { Referer: `${config.base}/` } });
           const $ = cheerio.load(html);
-          const offers = extractStructuredOffers($, config.base);
+          const offers = extractStructuredOffers($, config.base, {
+            ...(config.buildProductUrl ? { buildProductUrl: config.buildProductUrl } : {}),
+          });
 
           if (offers.length > 0) {
             if (preferred !== index) {
@@ -99,10 +103,24 @@ export function createHtmlSearchAdapter(config: HtmlStoreConfig): StoreAdapter {
  * sus selectores propios fallan: es la via que resulto mas resistente a los
  * cambios de maquetado de las tiendas.
  */
-export function extractStructuredOffers($: cheerio.CheerioAPI, base: string): RawOffer[] {
+export interface ExtractOptions {
+  /**
+   * Construye el enlace del producto cuando el estado embebido no lo trae.
+   *
+   * Sodimac, por ejemplo, publica sus productos sin campo `url`: hay que
+   * armarla desde el identificador.
+   */
+  buildProductUrl?: (node: Record<string, unknown>) => string | null;
+}
+
+export function extractStructuredOffers(
+  $: cheerio.CheerioAPI,
+  base: string,
+  options: ExtractOptions = {},
+): RawOffer[] {
   const fromJsonLd = extractFromJsonLd($, base);
   if (fromJsonLd.length > 0) return fromJsonLd;
-  return extractFromEmbeddedState($, base);
+  return extractFromEmbeddedState($, base, options);
 }
 
 /* ------------------------------------------------------------------ */
@@ -224,7 +242,11 @@ function firstImage(value: unknown, base: string): string | null {
 const STATE_SELECTORS = ['script#__NEXT_DATA__', 'script[id="__NEXT_DATA__"]'];
 const STATE_GLOBALS = ['__PRELOADED_STATE__', '__INITIAL_STATE__', '__APOLLO_STATE__'];
 
-function extractFromEmbeddedState($: cheerio.CheerioAPI, base: string): RawOffer[] {
+function extractFromEmbeddedState(
+  $: cheerio.CheerioAPI,
+  base: string,
+  options: ExtractOptions,
+): RawOffer[] {
   const blobs: unknown[] = [];
 
   for (const selector of STATE_SELECTORS) {
@@ -252,10 +274,12 @@ function extractFromEmbeddedState($: cheerio.CheerioAPI, base: string): RawOffer
     }
   }
 
-  const offers = blobs.flatMap((blob) => collectStateProducts(blob).flatMap((node) => {
-    const offer = stateNodeToOffer(node, base);
-    return offer ? [offer] : [];
-  }));
+  const offers = blobs.flatMap((blob) =>
+    collectStateProducts(blob).flatMap((node) => {
+      const offer = stateNodeToOffer(node, base, options);
+      return offer ? [offer] : [];
+    }),
+  );
 
   return dedupe(offers);
 }
@@ -312,24 +336,41 @@ function extractStatePrice(node: Record<string, unknown>): number | null {
     }
   }
 
-  // Formato Falabella/Sodimac: prices: [{ price: ["129.990"] }]
-  const prices = node['prices'];
-  if (Array.isArray(prices)) {
-    for (const entry of prices) {
-      if (!entry || typeof entry !== 'object') continue;
-      const inner = (entry as Record<string, unknown>)['price'];
-      const candidate = Array.isArray(inner) ? inner[0] : inner;
-      if (typeof candidate === 'number' || typeof candidate === 'string') {
-        const parsed = parseClp(candidate);
-        if (parsed !== null) return parsed;
-      }
-    }
-  }
-
-  return null;
+  // Formato del grupo Falabella. Falabella publica `price: ["129.990"]` y
+  // Sodimac `price: "7.990"` mas `priceWithoutFormatting: 7990`, que al ser
+  // un numero limpio no depende de interpretar el separador de miles.
+  const values = priceValues(node);
+  return values.length > 0 ? Math.min(...values) : null;
 }
 
-function stateNodeToOffer(node: Record<string, unknown>, base: string): RawOffer | null {
+/** Todos los precios de un nodo, en pesos. */
+function priceValues(node: Record<string, unknown>): number[] {
+  const prices = node['prices'];
+  if (!Array.isArray(prices)) return [];
+
+  return prices.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return [];
+    const row = entry as Record<string, unknown>;
+
+    const clean = row['priceWithoutFormatting'];
+    if (typeof clean === 'number' || typeof clean === 'string') {
+      const parsed = parseClp(clean);
+      if (parsed !== null) return [parsed];
+    }
+
+    const inner = row['price'];
+    const candidate = Array.isArray(inner) ? inner[0] : inner;
+    if (typeof candidate !== 'number' && typeof candidate !== 'string') return [];
+    const parsed = parseClp(candidate);
+    return parsed === null ? [] : [parsed];
+  });
+}
+
+function stateNodeToOffer(
+  node: Record<string, unknown>,
+  base: string,
+  options: ExtractOptions,
+): RawOffer | null {
   const title = NAME_KEYS.map((key) => asString(node[key])).find(
     (value) => value && value.trim().length > 3,
   );
@@ -338,10 +379,12 @@ function stateNodeToOffer(node: Record<string, unknown>, base: string): RawOffer
   const price = extractStatePrice(node);
   if (price === null) return null;
 
-  const url = absoluteUrl(
-    asString(node['url']) ?? asString(node['productUrl']) ?? asString(node['link']),
-    base,
-  );
+  // Algunas tiendas no publican el enlace en el estado: se arma desde el id.
+  const url =
+    absoluteUrl(
+      asString(node['url']) ?? asString(node['productUrl']) ?? asString(node['link']),
+      base,
+    ) ?? absoluteUrl(options.buildProductUrl?.(node) ?? null, base);
   if (!url) return null;
 
   const externalId =
@@ -378,20 +421,8 @@ function collectListPrice(node: Record<string, unknown>): number | null {
   }
 
   // Con varios precios (internet / normal / tarjeta) el mayor es el normal.
-  const prices = node['prices'];
-  if (Array.isArray(prices)) {
-    const values = prices.flatMap((entry) => {
-      if (!entry || typeof entry !== 'object') return [];
-      const inner = (entry as Record<string, unknown>)['price'];
-      const candidate = Array.isArray(inner) ? inner[0] : inner;
-      if (typeof candidate !== 'number' && typeof candidate !== 'string') return [];
-      const parsed = parseClp(candidate);
-      return parsed === null ? [] : [parsed];
-    });
-    if (values.length > 1) return Math.max(...values);
-  }
-
-  return null;
+  const values = priceValues(node);
+  return values.length > 1 ? Math.max(...values) : null;
 }
 
 /* ------------------------------------------------------------------ */

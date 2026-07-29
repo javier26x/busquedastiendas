@@ -3,6 +3,7 @@ import { mercadoLibreAdapter } from '../adapters/mercadolibre.js';
 import { createVtexAdapter } from '../adapters/vtex.js';
 import { createHtmlSearchAdapter } from '../adapters/html-search.js';
 import { createFallbackAdapter } from '../adapters/fallback.js';
+import { createDomCardsAdapter } from '../adapters/dom-cards.js';
 import { fixtureAdapter } from '../adapters/fixture.js';
 
 const enc = encodeURIComponent;
@@ -68,13 +69,14 @@ export const STORES: StoreAdapter[] = [
   createHtmlSearchAdapter({
     id: 'sodimac',
     label: 'Sodimac',
-    base: 'https://www.falabella.com',
-    buildUrls: (q) => [
-      // Sodimac migro al dominio del grupo, donde Falabella si responde.
-      `https://www.falabella.com/sodimac-cl/search?Ntt=${enc(q)}`,
-      `https://www.sodimac.cl/sodimac-cl/search?Ntt=${enc(q)}`,
-      `https://www.sodimac.cl/sodimac-cl/search/?Ntt=${enc(q)}`,
-    ],
+    base: 'https://www.sodimac.cl',
+    buildUrls: (q) => [`https://www.sodimac.cl/sodimac-cl/search?Ntt=${enc(q)}`],
+    // Sodimac publica sus productos sin campo `url`, a diferencia de
+    // Falabella: hay que armar el enlace desde el identificador.
+    buildProductUrl: (node) => {
+      const id = node['productId'] ?? node['skuId'];
+      return typeof id === 'string' && id ? `https://www.sodimac.cl/sodimac-cl/product/${id}/` : null;
+    },
   }),
   createHtmlSearchAdapter({
     id: 'tottus',
@@ -95,14 +97,19 @@ export const STORES: StoreAdapter[] = [
       `https://www.easy.cl/tienda/search?q=${enc(q)}`,
     ],
   }),
-  createUnknownPlatformStore({
+  // Paris renderiza los productos en el DOM y no deja ningun JSON util.
+  createDomCardsAdapter({
     id: 'paris',
     label: 'Paris',
-    host: 'www.paris.cl',
-    paths: (q) => [
+    base: 'https://www.paris.cl',
+    buildUrls: (q) => [
       `https://www.paris.cl/search/?q=${enc(q)}`,
       `https://www.paris.cl/search?q=${enc(q)}`,
-      `https://www.paris.cl/busqueda?q=${enc(q)}`,
+    ],
+    cardSelectors: [
+      '[data-testid="paris-vertical-pod"]',
+      '[data-testid^="paris-vertical-pod"]',
+      '[data-testid*="pod"]',
     ],
   }),
 

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { cert, getApps, initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
@@ -48,7 +48,10 @@ export function getDb(): Firestore {
         process.env['GOOGLE_CLOUD_PROJECT'] ??
         process.env['GCLOUD_PROJECT'];
 
-      if (!projectId && !process.env['GOOGLE_APPLICATION_CREDENTIALS']) {
+      // Se comprueba que haya credenciales, no que haya proyecto: son cosas
+      // distintas y confundirlas deja pasar el control para reventar despues,
+      // dentro del SDK y fuera de cualquier try/catch util.
+      if (!hasDefaultCredentials()) {
         throw new Error(
           'Faltan credenciales de Firebase. Opciones:\n' +
             '  - definir FIREBASE_SERVICE_ACCOUNT con el JSON de la cuenta de servicio\n' +
@@ -66,6 +69,25 @@ export function getDb(): Firestore {
   cached = getFirestore();
   cached.settings({ ignoreUndefinedProperties: true });
   return cached;
+}
+
+/**
+ * Detecta si el entorno puede proveer credenciales por defecto.
+ *
+ * Cubre las tres formas reales: una clave apuntada por variable, el archivo
+ * que deja `gcloud auth application-default login`, y el servidor de
+ * metadatos de Cloud Shell / GCE.
+ */
+function hasDefaultCredentials(): boolean {
+  if (process.env['GOOGLE_APPLICATION_CREDENTIALS']) return true;
+
+  // Presente en Cloud Shell, Cloud Run, GCE y GitHub Actions con auth de Google.
+  if (process.env['GOOGLE_CLOUD_PROJECT'] || process.env['GCE_METADATA_HOST']) return true;
+
+  const home = process.env['HOME'] ?? process.env['USERPROFILE'];
+  if (!home) return false;
+
+  return existsSync(`${home}/.config/gcloud/application_default_credentials.json`);
 }
 
 /**

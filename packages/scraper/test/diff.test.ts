@@ -1,4 +1,6 @@
 import { test } from 'node:test';
+import * as cheerio from 'cheerio';
+import { extractStructuredOffers } from '../src/adapters/html-search.js';
 import assert from 'node:assert/strict';
 import { buildRecord } from '../src/pipeline/diff.js';
 import { mergeOffers, normalizeOffers, productKey } from '../src/pipeline/normalize.js';
@@ -230,4 +232,77 @@ test('las reglas del codigo se serializan sin arreglos anidados', () => {
   }
   // Y el scraper vuelve a leer exactamente lo mismo.
   assert.deepEqual(parseMatchRules(stored).requireAll, search.match.requireAll);
+});
+
+test('Sodimac: sin campo url no se extrae nada, con buildProductUrl si', () => {
+  // Producto tal como lo publica Sodimac en __NEXT_DATA__: no trae `url`.
+  const producto = {
+    productId: '3354652',
+    skuId: '3354652',
+    displayName: 'Caja Organizadora 30x40x25 cm Beige',
+    brand: 'Just Home Collection',
+    prices: [{ type: 'NORMAL', symbol: '$', price: '7.990', priceWithoutFormatting: 7990 }],
+    mediaUrls: ['https://media.falabella.com/sodimacCL/3354652/public'],
+  };
+  const state = { props: { pageProps: { searchProps: { searchData: { results: [producto] } } } } };
+  const html = `<html><body><script id="__NEXT_DATA__" type="application/json">${JSON.stringify(
+    state,
+  )}</script></body></html>`;
+
+  const sinUrl = extractStructuredOffers(cheerio.load(html), 'https://www.sodimac.cl');
+  assert.equal(sinUrl.length, 0, 'sin enlace no hay oferta utilizable');
+
+  const conUrl = extractStructuredOffers(cheerio.load(html), 'https://www.sodimac.cl', {
+    buildProductUrl: (node) =>
+      typeof node['productId'] === 'string'
+        ? `https://www.sodimac.cl/sodimac-cl/product/${node['productId']}/`
+        : null,
+  });
+
+  assert.equal(conUrl.length, 1);
+  assert.equal(conUrl[0]?.title, 'Caja Organizadora 30x40x25 cm Beige');
+  assert.equal(conUrl[0]?.price, 7990);
+  assert.equal(conUrl[0]?.brand, 'Just Home Collection');
+  assert.equal(conUrl[0]?.url, 'https://www.sodimac.cl/sodimac-cl/product/3354652/');
+});
+
+test('se prefiere priceWithoutFormatting al precio con separadores', () => {
+  // Si se leyera "1.234.567" mal, el separador de miles daria otro numero.
+  const producto = {
+    productId: 'X',
+    displayName: 'Bodega de jardin grande exterior',
+    prices: [{ price: '1.234.567', priceWithoutFormatting: 1234567 }],
+  };
+  const state = { props: { results: [producto] } };
+  const html = `<html><body><script id="__NEXT_DATA__" type="application/json">${JSON.stringify(
+    state,
+  )}</script></body></html>`;
+
+  const offers = extractStructuredOffers(cheerio.load(html), 'https://x.cl', {
+    buildProductUrl: () => 'https://x.cl/p/1',
+  });
+
+  assert.equal(offers[0]?.price, 1234567);
+});
+
+test('con varios precios, el menor es el vigente y el mayor el normal', () => {
+  const producto = {
+    productId: 'X',
+    displayName: 'Caja organizadora con tapa apilable',
+    prices: [
+      { type: 'NORMAL', priceWithoutFormatting: 19990 },
+      { type: 'INTERNET', priceWithoutFormatting: 12990 },
+    ],
+  };
+  const state = { props: { results: [producto] } };
+  const html = `<html><body><script id="__NEXT_DATA__" type="application/json">${JSON.stringify(
+    state,
+  )}</script></body></html>`;
+
+  const offers = extractStructuredOffers(cheerio.load(html), 'https://x.cl', {
+    buildProductUrl: () => 'https://x.cl/p/1',
+  });
+
+  assert.equal(offers[0]?.price, 12990);
+  assert.equal(offers[0]?.listPrice, 19990);
 });
