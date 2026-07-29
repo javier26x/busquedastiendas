@@ -172,30 +172,31 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 
 ### Estado verificado de cada tienda
 
-Medido con `npm run scrape -- --dry-run` el 27-07-2026:
+Medido con corridas reales el 29-07-2026:
 
 | Tienda | Estado | Detalle |
 | --- | --- | --- |
-| Falabella | ✅ funciona | 98 productos únicos vía datos estructurados |
-| Sodimac | 🔍 probando | Ahora prueba también `falabella.com/sodimac-cl`, la plataforma del grupo |
-| Easy | 🔍 probando | VTEX dio 403; se prueban rutas HTML alternativas |
-| Paris | 🔍 probando | VTEX dio 404: no es esa plataforma; se prueban rutas HTML |
-| Mercado Libre | 🔍 probando | API cerrada; ahora cae a datos estructurados |
-| Ripley, Líder, Construmart, Imperial | 🔍 nuevas | Añadidas con detección automática de plataforma |
+| **Falabella** | ✅ activa | Datos estructurados en `__NEXT_DATA__` |
+| **Sodimac** | ✅ activa | Igual, pero sin campo `url`: el enlace se arma con el `productId` |
+| Paris | 🔍 en curso | 30 tarjetas en el DOM, sin JSON; adaptador por selectores en pruebas |
+| Mercado Libre | ⛔ bloqueada | La API exige token y el listado devuelve una interstitial de 23 kB |
+| Easy, Ripley | ⛔ bloqueadas | 403 en todas sus rutas, también desde GitHub Actions |
+| Líder | ⛔ bloqueada | Responde 200 con una página anti-bot |
+| Construmart, Imperial | ⛔ sin datos | Cargan los productos por XHR |
 
-Las tiendas marcadas 🔍 declaran varias URL candidatas y el adaptador se queda con
-la primera que devuelva productos, registrando cuál fue en el log. Después de una
-corrida real conviene podar las que no se usan.
+Las bloqueadas quedan **declaradas pero desactivadas**: siguen en el registro para
+poder reintentarlas, sin gastar tres minutos por corrida en peticiones condenadas.
 
-Para diagnosticar una tienda y ver qué devuelve realmente cada URL candidata:
+Para reactivar una, cambia su `enabled` en `packages/scraper/src/config/stores.ts`.
+Para investigar por qué falla:
 
 ```bash
-npm run diagnose -- --store=easy --query="caja organizadora"
+npm run diagnose -- --store=paris
+npm run diagnose -- --store=paris --dump='[data-testid^="paris-vertical-pod"]'
 ```
 
-Reporta código HTTP, tipo de contenido, si hay JSON-LD o estado embebido, y en qué
-rutas del JSON están los arreglos que parecen productos. Con eso se escribe o
-repara un adaptador sin adivinar.
+El diagnóstico reporta código HTTP, si hay JSON-LD o estado embebido, en qué rutas
+del JSON están los productos, y puede volcar el HTML de un selector concreto.
 
 > Las tiendas se consultan con una espera entre peticiones y sin paralelismo, a un
 > volumen comparable al de una persona navegando. Aun así, revisa los términos de

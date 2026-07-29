@@ -56,7 +56,9 @@ function createUnknownPlatformStore(config: {
  * conocidas de antemano; el log de cada corrida indica cual funciono.
  */
 export const STORES: StoreAdapter[] = [
-  mercadoLibreAdapter,
+  // Bloqueada: la API exige token y el listado devuelve una interstitial de
+  // 23 kB en vez de resultados. Se deja registrada para poder reintentarla.
+  { ...mercadoLibreAdapter, enabled: false },
 
   // --- Grupo Falabella -----------------------------------------------------
   // Ambas corren sobre la misma plataforma: falabella.com/{tienda}-cl/search.
@@ -87,10 +89,13 @@ export const STORES: StoreAdapter[] = [
   }),
 
   // --- Grupo Cencosud ------------------------------------------------------
+  // Bloqueada por WAF: responde 403 en todas sus rutas, tambien desde
+  // GitHub Actions. No es un problema de URL.
   createUnknownPlatformStore({
     id: 'easy',
     label: 'Easy',
     host: 'www.easy.cl',
+    enabled: false,
     paths: (q) => [
       `https://www.easy.cl/search?q=${enc(q)}`,
       `https://www.easy.cl/busqueda?q=${enc(q)}`,
@@ -114,33 +119,41 @@ export const STORES: StoreAdapter[] = [
   }),
 
   // --- Otras tiendas -------------------------------------------------------
+  // Bloqueada por WAF: 403 en todas sus rutas.
   createUnknownPlatformStore({
     id: 'ripley',
     label: 'Ripley',
     host: 'simple.ripley.cl',
+    enabled: false,
     paths: (q) => [
       `https://simple.ripley.cl/search/${enc(q)}`,
       `https://simple.ripley.cl/search?q=${enc(q)}`,
     ],
   }),
+  // Responde 200 pero sirve una pagina anti-bot, sin productos.
   createUnknownPlatformStore({
     id: 'lider',
     label: 'Lider',
     host: 'www.lider.cl',
+    enabled: false,
     paths: (q) => [
       `https://www.lider.cl/catalogo/search?Ntt=${enc(q)}`,
       `https://www.lider.cl/search?query=${enc(q)}`,
     ],
   }),
+  // Sin datos estructurados ni selectores reconocibles: carga por XHR.
   createUnknownPlatformStore({
     id: 'construmart',
     label: 'Construmart',
     host: 'www.construmart.cl',
+    enabled: false,
   }),
+  // Sin datos estructurados ni selectores reconocibles: carga por XHR.
   createUnknownPlatformStore({
     id: 'imperial',
     label: 'Imperial',
     host: 'www.imperial.cl',
+    enabled: false,
   }),
 
   fixtureAdapter,
