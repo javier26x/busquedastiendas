@@ -12,6 +12,7 @@ import { runScrape, buildSummary } from './pipeline/run.js';
 import { persistOffers, saveRunSummary, markSearchesRun } from './pipeline/persist.js';
 import { getDb } from './firestore/client.js';
 import { bootstrapSearches, loadSearches } from './firestore/searches.js';
+import { closeBrowser } from './lib/browser.js';
 import type { NormalizedOffer, SearchDefinition } from './types.js';
 
 interface CliOptions {
@@ -199,7 +200,11 @@ async function main(): Promise<void> {
   if (summary.status === 'error') process.exitCode = 1;
 }
 
-main().catch((error: unknown) => {
-  console.error('Fallo la corrida:', error instanceof Error ? error.stack : error);
-  process.exitCode = 1;
-});
+main()
+  .catch((error: unknown) => {
+    console.error('Fallo la corrida:', error instanceof Error ? error.stack : error);
+    process.exitCode = 1;
+  })
+  // Sin esto el proceso queda vivo esperando al navegador, y en el cron eso
+  // seria un job colgado hasta agotar el tiempo limite.
+  .finally(() => closeBrowser());

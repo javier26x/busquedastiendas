@@ -172,31 +172,42 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 
 ### Estado verificado de cada tienda
 
-Medido con corridas reales el 29-07-2026:
-
-| Tienda | Estado | Detalle |
+| Tienda | Cómo se lee | Estado |
 | --- | --- | --- |
-| **Falabella** | ✅ activa | Datos estructurados en `__NEXT_DATA__` |
-| **Sodimac** | ✅ activa | Igual, pero sin campo `url`: el enlace se arma con el `productId` |
-| Paris | 🔍 en curso | 30 tarjetas en el DOM, sin JSON; adaptador por selectores en pruebas |
-| Mercado Libre | ⛔ bloqueada | La API exige token y el listado devuelve una interstitial de 23 kB |
-| Easy, Ripley | ⛔ bloqueadas | 403 en todas sus rutas, también desde GitHub Actions |
-| Líder | ⛔ bloqueada | Responde 200 con una página anti-bot |
-| Construmart, Imperial | ⛔ sin datos | Cargan los productos por XHR |
+| **Falabella** | HTTP · datos estructurados | ✅ funcionando |
+| **Sodimac** | HTTP · datos estructurados (enlace armado del `productId`) | ✅ funcionando |
+| Paris | Navegador · tarjetas del DOM | 🔍 recién habilitada |
+| IKEA, Easy, Ripley, Líder | Navegador | 🔍 recién habilitadas |
+| Construmart, Imperial | — | ⛔ sin datos reconocibles |
+| Mercado Libre | — | ⛔ API con token e interstitial anti-bot |
 
-Las bloqueadas quedan **declaradas pero desactivadas**: siguen en el registro para
-poder reintentarlas, sin gastar tres minutos por corrida en peticiones condenadas.
+### Las tres formas de leer una tienda
 
-Para reactivar una, cambia su `enabled` en `packages/scraper/src/config/stores.ts`.
-Para investigar por qué falla:
+El scraper las intenta en orden de coste, y se queda con la primera que dé
+resultados:
+
+1. **Catálogo público** (VTEX y similares) — un JSON limpio, lo más barato.
+2. **Datos estructurados del HTML** — JSON-LD o el estado embebido de la SPA
+   (`__NEXT_DATA__`). Es lo que usan Falabella y Sodimac, y aguanta rediseños
+   mucho mejor que unos selectores CSS.
+3. **Navegador headless** — Chromium real vía Playwright. Cuesta segundos por
+   consulta, así que es el último recurso, pero resuelve los dos casos que un
+   cliente HTTP no puede: las tiendas que responden 403 por la huella TLS del
+   cliente, y las que cargan sus productos por XHR dejando el HTML inicial vacío.
+
+Con `CHROMIUM_PATH` se puede apuntar a un Chromium ya instalado, útil en
+imágenes de CI que lo traen incluido.
+
+### Diagnosticar una tienda
 
 ```bash
 npm run diagnose -- --store=paris
 npm run diagnose -- --store=paris --dump='[data-testid^="paris-vertical-pod"]'
 ```
 
-El diagnóstico reporta código HTTP, si hay JSON-LD o estado embebido, en qué rutas
-del JSON están los productos, y puede volcar el HTML de un selector concreto.
+Reporta código HTTP, si hay JSON-LD o estado embebido, en qué rutas del JSON
+están los productos, y la anatomía de una tarjeta: cuántos enlaces tiene, qué
+elementos llevan precio y cuáles son los candidatos a título.
 
 > Las tiendas se consultan con una espera entre peticiones y sin paralelismo, a un
 > volumen comparable al de una persona navegando. Aun así, revisa los términos de

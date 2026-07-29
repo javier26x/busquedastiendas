@@ -66,16 +66,28 @@ export function createDomCardsAdapter(config: DomCardsConfig): StoreAdapter {
 }
 
 function extractCards($: cheerio.CheerioAPI, config: DomCardsConfig): RawOffer[] {
-  const cards = config.cardSelectors
-    .map((selector) => $(selector))
-    .find((found) => found.length > 0);
+  return extractDomCards($, config.base, config.cardSelectors);
+}
+
+/**
+ * Extrae los productos de las tarjetas del DOM.
+ *
+ * Se exporta para que el adaptador de navegador la use sobre el HTML ya
+ * renderizado: la unica diferencia entre ambos es como se obtuvo el HTML.
+ */
+export function extractDomCards(
+  $: cheerio.CheerioAPI,
+  base: string,
+  cardSelectors: string[],
+): RawOffer[] {
+  const cards = cardSelectors.map((selector) => $(selector)).find((found) => found.length > 0);
 
   if (!cards || cards.length === 0) return [];
 
   const offers: RawOffer[] = [];
 
   cards.each((_index, element) => {
-    const offer = cardToOffer($, $(element), config.base);
+    const offer = cardToOffer($, $(element), base);
     if (offer) offers.push(offer);
   });
 
@@ -142,11 +154,17 @@ function cardToOffer(
   };
 }
 
-/** Ultimo segmento util de la URL, como identificador estable. */
+/**
+ * Identificador estable derivado de la URL.
+ *
+ * Se usa la ruta completa y no el ultimo segmento: en las tiendas cuyas URL
+ * terminan en `/p` (VTEX, Paris) ese segmento es el mismo para todos los
+ * productos, y todos colapsarian en uno solo al deduplicar.
+ */
 function urlFingerprint(url: string): string {
-  const path = url.split('?')[0] ?? url;
-  const segments = path.split('/').filter(Boolean);
-  return segments[segments.length - 1] ?? path;
+  const path = (url.split('?')[0] ?? url).replace(/^https?:\/\/[^/]+/, '');
+  const clean = path.replace(/^\/+|\/+$/g, '').replace(/\//g, '-');
+  return clean || url;
 }
 
 function dedupe(offers: RawOffer[]): RawOffer[] {

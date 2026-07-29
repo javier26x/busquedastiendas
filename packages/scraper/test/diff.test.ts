@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import * as cheerio from 'cheerio';
 import { extractStructuredOffers } from '../src/adapters/html-search.js';
+import { extractDomCards } from '../src/adapters/dom-cards.js';
 import assert from 'node:assert/strict';
 import { buildRecord } from '../src/pipeline/diff.js';
 import { mergeOffers, normalizeOffers, productKey } from '../src/pipeline/normalize.js';
@@ -302,6 +303,36 @@ test('con varios precios, el menor es el vigente y el mayor el normal', () => {
   const offers = extractStructuredOffers(cheerio.load(html), 'https://x.cl', {
     buildProductUrl: () => 'https://x.cl/p/1',
   });
+
+  assert.equal(offers[0]?.price, 12990);
+  assert.equal(offers[0]?.listPrice, 19990);
+});
+
+test('el id de un producto usa la ruta completa, no el ultimo segmento', () => {
+  // Paris y las tiendas VTEX terminan sus URL en "/p": tomar el ultimo
+  // segmento daria el mismo id a todos y colapsarian al deduplicar.
+  const html = (n: number): string => `
+    <div data-testid="pod">
+      <a href="/producto/caja-organizadora-${n}/p">Caja organizadora ${n} litros con tapa</a>
+      <span class="price">$${10 + n}.990</span>
+    </div>`;
+
+  const $ = cheerio.load(`<html><body>${html(1)}${html(2)}${html(3)}</body></html>`);
+  const offers = extractDomCards($, 'https://www.paris.cl', ['[data-testid="pod"]']);
+
+  assert.equal(offers.length, 3, 'los tres productos deben sobrevivir a la deduplicacion');
+  assert.equal(new Set(offers.map((o) => o.externalId)).size, 3, 'con ids distintos');
+});
+
+test('las tarjetas del DOM toman el menor precio como vigente y el mayor como normal', () => {
+  const $ = cheerio.load(`
+    <div data-testid="pod">
+      <a href="/producto/x/p">Caja organizadora grande con tapa</a>
+      <span class="price">$19.990</span>
+      <span class="price">$12.990</span>
+    </div>`);
+
+  const offers = extractDomCards($, 'https://www.paris.cl', ['[data-testid="pod"]']);
 
   assert.equal(offers[0]?.price, 12990);
   assert.equal(offers[0]?.listPrice, 19990);

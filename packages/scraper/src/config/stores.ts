@@ -4,6 +4,7 @@ import { createVtexAdapter } from '../adapters/vtex.js';
 import { createHtmlSearchAdapter } from '../adapters/html-search.js';
 import { createFallbackAdapter } from '../adapters/fallback.js';
 import { createDomCardsAdapter } from '../adapters/dom-cards.js';
+import { createBrowserAdapter } from '../adapters/browser.js';
 import { fixtureAdapter } from '../adapters/fixture.js';
 
 const enc = encodeURIComponent;
@@ -102,28 +103,17 @@ export const STORES: StoreAdapter[] = [
       return typeof id === 'string' && id ? `https://www.sodimac.cl/sodimac-cl/product/${id}/` : null;
     },
   }),
-  // IKEA Chile lo opera Falabella, asi que lo mas probable es que comparta
-  // plataforma con las dos que si funcionan. Se prueban esa ruta primero y
-  // el sitio global de IKEA despues.
-  // ikea.cl responde 403 a todo y no esta en la plataforma de Falabella
-  // (404). Solo ikea.com/cl/es responde, sin datos estructurados.
-  createHtmlSearchAdapter({
+  // ikea.cl responde 403 a todo cliente HTTP y no esta en la plataforma de
+  // Falabella (404). Se intenta con navegador, y el sitio global de respaldo.
+  createBrowserAdapter({
     id: 'ikea',
     label: 'IKEA',
     base: 'https://www.ikea.cl',
-    enabled: false,
     buildUrls: (q) => [
-      `https://www.ikea.cl/ikea-cl/search?Ntt=${enc(q)}`,
-      `https://www.falabella.com/ikea-cl/search?Ntt=${enc(q)}`,
       `https://www.ikea.cl/search?q=${enc(q)}`,
       `https://www.ikea.com/cl/es/search/?q=${enc(q)}`,
     ],
-    // Si resulta ser la plataforma de Falabella, los productos vendran sin
-    // campo `url`, igual que en Sodimac.
-    buildProductUrl: (node) => {
-      const id = node['productId'] ?? node['skuId'];
-      return typeof id === 'string' && id ? `https://www.ikea.cl/ikea-cl/product/${id}/` : null;
-    },
+    settleMs: 2500,
   }),
   createHtmlSearchAdapter({
     id: 'tottus',
@@ -134,59 +124,46 @@ export const STORES: StoreAdapter[] = [
   }),
 
   // --- Grupo Cencosud ------------------------------------------------------
-  // Bloqueada por WAF: responde 403 en todas sus rutas, tambien desde
-  // GitHub Actions. No es un problema de URL.
-  createUnknownPlatformStore({
+  // 403 a cualquier cliente HTTP; con navegador real puede pasar.
+  createBrowserAdapter({
     id: 'easy',
     label: 'Easy',
-    host: 'www.easy.cl',
-    enabled: false,
-    paths: (q) => [
+    base: 'https://www.easy.cl',
+    buildUrls: (q) => [
       `https://www.easy.cl/search?q=${enc(q)}`,
-      `https://www.easy.cl/busqueda?q=${enc(q)}`,
-      `https://www.easy.cl/tienda/search?q=${enc(q)}`,
+      `https://www.easy.cl/${enc(q)}?map=ft`,
     ],
   }),
-  // Paris renderiza los productos en el DOM y no deja ningun JSON util.
-  createDomCardsAdapter({
+  // Paris carga los productos por XHR: el HTML inicial trae las tarjetas
+  // vacias, con 213 "skeleton". Necesita navegador.
+  createBrowserAdapter({
     id: 'paris',
     label: 'Paris',
     base: 'https://www.paris.cl',
-    buildUrls: (q) => [
-      `https://www.paris.cl/search/?q=${enc(q)}`,
-      `https://www.paris.cl/search?q=${enc(q)}`,
-    ],
-    cardSelectors: [
-      '[data-testid="paris-vertical-pod"]',
-      '[data-testid^="paris-vertical-pod"]',
-      '[data-testid*="pod"]',
-    ],
+    buildUrls: (q) => [`https://www.paris.cl/search/?q=${enc(q)}`],
+    cardSelectors: ['[data-testid^="paris-vertical-pod"]', '[data-testid*="pod"]'],
+    waitForSelector: '[data-testid="paris-pod-price"]',
   }),
 
   // --- Otras tiendas -------------------------------------------------------
-  // 403 en ambos dominios y con las tres estrategias. El bloqueo es por
-  // reputacion de IP, no por ruta.
-  createUnknownPlatformStore({
+  // 403 en ambos dominios con las tres estrategias HTTP: bloqueo por huella
+  // del cliente, que es justo lo que resuelve un navegador real.
+  createBrowserAdapter({
     id: 'ripley',
     label: 'Ripley',
-    host: 'www.ripley.cl',
-    enabled: false,
-    paths: (q) => [
-      `https://www.ripley.cl/search/${enc(q)}`,
-      `https://www.ripley.cl/search?q=${enc(q)}`,
+    base: 'https://simple.ripley.cl',
+    buildUrls: (q) => [
       `https://simple.ripley.cl/search/${enc(q)}`,
+      `https://www.ripley.cl/search/${enc(q)}`,
     ],
   }),
-  // Responde 200 pero sirve una pagina anti-bot, sin productos.
-  createUnknownPlatformStore({
+  // Servia una pagina anti-bot al cliente HTTP.
+  createBrowserAdapter({
     id: 'lider',
     label: 'Lider',
-    host: 'www.lider.cl',
-    enabled: false,
-    paths: (q) => [
-      `https://www.lider.cl/catalogo/search?Ntt=${enc(q)}`,
-      `https://www.lider.cl/search?query=${enc(q)}`,
-    ],
+    base: 'https://www.lider.cl',
+    buildUrls: (q) => [`https://www.lider.cl/search?query=${enc(q)}`],
+    settleMs: 2500,
   }),
   // Sin datos estructurados ni selectores reconocibles: carga por XHR.
   createUnknownPlatformStore({

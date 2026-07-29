@@ -476,11 +476,17 @@ function sliceBalancedJson(text: string, start: number): string | null {
   return null;
 }
 
-/** Id de respaldo cuando la tienda no expone SKU. */
+/**
+ * Identificador estable derivado de la URL.
+ *
+ * Se usa la ruta completa y no el ultimo segmento: en las tiendas cuyas URL
+ * terminan en `/p` (VTEX, Paris) ese segmento es el mismo para todos los
+ * productos, y todos colapsarian en uno solo al deduplicar.
+ */
 function urlFingerprint(url: string): string {
-  const path = url.split('?')[0] ?? url;
-  const segments = path.split('/').filter(Boolean);
-  return segments[segments.length - 1] ?? path;
+  const path = (url.split('?')[0] ?? url).replace(/^https?:\/\/[^/]+/, '');
+  const clean = path.replace(/^\/+|\/+$/g, '').replace(/\//g, '-');
+  return clean || url;
 }
 
 function dedupe(offers: RawOffer[]): RawOffer[] {
