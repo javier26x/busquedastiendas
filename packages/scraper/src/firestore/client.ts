@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { cert, getApps, initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 
@@ -37,10 +39,14 @@ export function getDb(): Firestore {
       // Se valida antes de seguir: applicationDefault() no falla al construirse
       // sino al primer uso, y para entonces el error que aparece es
       // "Unable to detect a Project Id", que no dice nada del problema real.
+      // `.firebaserc` manda sobre el entorno: en Cloud Shell el proyecto
+      // activo puede ser otro, y escribir en la base equivocada es peor que
+      // fallar. Las variables solo sirven de respaldo.
       const projectId =
+        readProjectFromFirebaserc() ??
+        process.env['FIREBASE_PROJECT_ID'] ??
         process.env['GOOGLE_CLOUD_PROJECT'] ??
-        process.env['GCLOUD_PROJECT'] ??
-        process.env['FIREBASE_PROJECT_ID'];
+        process.env['GCLOUD_PROJECT'];
 
       if (!projectId && !process.env['GOOGLE_APPLICATION_CREDENTIALS']) {
         throw new Error(
@@ -60,6 +66,25 @@ export function getDb(): Firestore {
   cached = getFirestore();
   cached.settings({ ignoreUndefinedProperties: true });
   return cached;
+}
+
+/**
+ * Lee el proyecto declarado en `.firebaserc`, en la raiz del repositorio.
+ *
+ * Es la fuente mas confiable: viaja con el codigo y no depende de que
+ * variable de entorno quedo definida en la sesion.
+ */
+function readProjectFromFirebaserc(): string | undefined {
+  try {
+    const path = fileURLToPath(new URL('../../../../.firebaserc', import.meta.url));
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
+      projects?: Record<string, string>;
+    };
+    return parsed.projects?.['default'];
+  } catch {
+    // No existe o no es legible: se usan las variables de entorno.
+    return undefined;
+  }
 }
 
 interface ServiceAccountJson {

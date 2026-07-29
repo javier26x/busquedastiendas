@@ -95,6 +95,49 @@ function describeArrays(value: unknown, path = '$', depth = 0, found: string[] =
   return found;
 }
 
+const NAME_HINTS = ['displayName', 'productName', 'productTitle', 'name', 'title'];
+
+/** Primer elemento de un arreglo cuyos objetos parecen productos. */
+function findProductSample(
+  value: unknown,
+  path = '$',
+  depth = 0,
+): { path: string; item: unknown } | null {
+  if (depth > 8 || value === null || typeof value !== 'object') return null;
+
+  if (Array.isArray(value)) {
+    const first = value.find((entry) => entry && typeof entry === 'object');
+    if (first && value.length >= 3) {
+      const keys = Object.keys(first as object);
+      // Un nombre y suficientes campos: un facet o un menu no califican.
+      if (keys.some((key) => NAME_HINTS.includes(key)) && keys.length >= 5) {
+        return { path, item: first };
+      }
+    }
+    for (const entry of value.slice(0, 2)) {
+      const found = findProductSample(entry, `${path}[]`, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const found = findProductSample(child, `${path}.${key}`, depth + 1);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function indent(text: string, spaces: number, max: number): string {
+  const pad = ' '.repeat(spaces);
+  const clipped = text.length > max ? `${text.slice(0, max)}\n… (recortado)` : text;
+  return clipped
+    .split('\n')
+    .map((line) => pad + line)
+    .join('\n');
+}
+
 /** Corta el objeto JSON balanceado que empieza en `start`. */
 function sliceBalancedJson(text: string, start: number): string | null {
   let depth = 0;
@@ -211,11 +254,41 @@ async function probe(entry: Probe, query: string): Promise<void> {
     dumped += 1;
     console.log(`    script ${id} (${text.length} bytes) — arreglos:`);
     for (const line of arrays) console.log(`      ${line}`);
+
+    // Un ejemplo completo del arreglo que parece de productos: sin ver los
+    // nombres reales de los campos de precio y enlace no se puede escribir
+    // el extractor.
+    const sample = findProductSample(parsed);
+    if (sample) {
+      console.log(`    ejemplo de producto en ${sample.path}:`);
+      console.log(indent(JSON.stringify(sample.item, null, 1), 6, 2600));
+    }
   }
 
   if (dumped === 0) {
     console.log('    ningun script en linea contiene JSON con arreglos grandes');
     console.log('    (probable carga por XHR: los productos no vienen en el HTML)');
+  }
+
+  // Cuando los productos estan en el DOM y no en un JSON, hay que atacarlos
+  // por selector. Los `data-testid` mas repetidos suelen ser la tarjeta de
+  // producto y sus partes.
+  const testIds = new Map<string, number>();
+  $('[data-testid]').each((_i, element) => {
+    const id = $(element).attr('data-testid') ?? '';
+    // Los ids con indice ("pod-1", "pod-2") se agrupan por su raiz.
+    const family = id.replace(/[-_]?\d+$/, '');
+    if (family) testIds.set(family, (testIds.get(family) ?? 0) + 1);
+  });
+
+  const repeated = [...testIds.entries()]
+    .filter(([, count]) => count >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12);
+
+  if (repeated.length > 0) {
+    console.log('    data-testid repetidos (candidatos a tarjeta de producto):');
+    for (const [id, count] of repeated) console.log(`      ${id} × ${count}`);
   }
 
   const selectors = [
