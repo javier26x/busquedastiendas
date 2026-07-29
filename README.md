@@ -174,12 +174,15 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 
 | Tienda | Cómo se lee | Estado |
 | --- | --- | --- |
-| **Falabella** | HTTP · datos estructurados | ✅ funcionando |
-| **Sodimac** | HTTP · datos estructurados (enlace armado del `productId`) | ✅ funcionando |
-| Paris | Navegador · tarjetas del DOM | 🔍 recién habilitada |
-| IKEA, Easy, Ripley, Líder | Navegador | 🔍 recién habilitadas |
+| **Falabella** | HTTP · datos estructurados | ✅ |
+| **Sodimac** | HTTP · datos estructurados (enlace armado del `productId`) | ✅ |
+| **IKEA** | Navegador · tarjetas del DOM, vía `ikea.com/cl/es` | ✅ |
+| Paris, Easy, Ripley, Líder | — | ⛔ ni con navegador |
 | Construmart, Imperial | — | ⛔ sin datos reconocibles |
 | Mercado Libre | — | ⛔ API con token e interstitial anti-bot |
+
+Las desactivadas siguen declaradas con su motivo anotado, listas para reintentar
+cambiando `enabled` en `packages/scraper/src/config/stores.ts`.
 
 ### Las tres formas de leer una tienda
 

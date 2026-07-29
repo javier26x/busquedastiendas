@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import * as cheerio from 'cheerio';
 import { extractStructuredOffers } from '../src/adapters/html-search.js';
-import { extractDomCards } from '../src/adapters/dom-cards.js';
+import { extractDomCards, extractPrices } from '../src/adapters/dom-cards.js';
 import assert from 'node:assert/strict';
 import { buildRecord } from '../src/pipeline/diff.js';
 import { mergeOffers, normalizeOffers, productKey } from '../src/pipeline/normalize.js';
@@ -336,4 +336,33 @@ test('las tarjetas del DOM toman el menor precio como vigente y el mayor como no
 
   assert.equal(offers[0]?.price, 12990);
   assert.equal(offers[0]?.listPrice, 19990);
+});
+
+test('dos precios en un mismo nodo no se leen como una sola cifra', () => {
+  // Sintoma real en IKEA: "$3.990" junto a "$3.990" daba $39.903.990.
+  assert.deepEqual(extractPrices('$3.990$3.990'), [3990, 3990]);
+  assert.deepEqual(extractPrices('$12.990 $19.990'), [12990, 19990]);
+});
+
+test('extractPrices tolera nodos con solo la cifra', () => {
+  assert.deepEqual(extractPrices('12.990'), [12990]);
+  assert.deepEqual(extractPrices('sin stock'), []);
+});
+
+test('un contenedor con precios anidados no duplica ni concatena', () => {
+  // El padre lleva class="prices" y sus hijos los importes: si se leyera el
+  // texto del padre saldria "3.9905.990" -> 39.905.990.
+  const $ = cheerio.load(`
+    <div data-testid="pod">
+      <a href="/producto/caja-organizadora/p">Caja organizadora con tapa 30 litros</a>
+      <div class="prices">
+        <span class="price">$3.990</span>
+        <span class="price-normal">$5.990</span>
+      </div>
+    </div>`);
+
+  const offers = extractDomCards($, 'https://x.cl', ['[data-testid="pod"]']);
+
+  assert.equal(offers[0]?.price, 3990);
+  assert.equal(offers[0]?.listPrice, 5990);
 });

@@ -122,15 +122,18 @@ function cardToOffer(
   const title = candidates.sort((a, b) => b.length - a.length)[0];
   if (!title) return null;
 
-  // Importes: todo lo que parezca un precio dentro de la tarjeta. El menor es
-  // el vigente y, si hay mas de uno, el mayor es el normal tachado.
-  const prices = card
-    .find('[data-testid*="price" i], [class*="price" i], [class*="precio" i]')
+  // Importes: el menor es el vigente y, si hay mas de uno, el mayor es el
+  // normal tachado.
+  //
+  // Solo se miran los elementos que no contienen otro con precio dentro: el
+  // texto de un contenedor incluye el de sus hijos concatenado, y "$3.990"
+  // junto a "$3.990" se leeria como un solo importe de $39.903.990.
+  const priceNodes = card
+    .find(PRICE_SELECTOR)
     .toArray()
-    .flatMap((node) => {
-      const parsed = parseClp($(node).text());
-      return parsed === null ? [] : [parsed];
-    });
+    .filter((node) => $(node).find(PRICE_SELECTOR).length === 0);
+
+  const prices = priceNodes.flatMap((node) => extractPrices($(node).text()));
 
   const unique = [...new Set(prices)].sort((a, b) => a - b);
   const price = unique[0];
@@ -152,6 +155,29 @@ function cardToOffer(
     currency: 'CLP',
     available: true,
   };
+}
+
+const PRICE_SELECTOR = '[data-testid*="price" i], [class*="price" i], [class*="precio" i]';
+
+/**
+ * Importes contenidos en un texto, cada uno por separado.
+ *
+ * Se buscan por patron en vez de parsear el texto entero, porque un mismo
+ * nodo puede traer dos precios pegados y unirlos daria una cifra inventada.
+ */
+export function extractPrices(text: string): number[] {
+  const tokens = text.match(/\$\s?\d{1,3}(?:[.\s]\d{3})+|\$\s?\d+/g);
+
+  if (tokens) {
+    return tokens.flatMap((token) => {
+      const value = parseClp(token);
+      return value === null ? [] : [value];
+    });
+  }
+
+  // Sin simbolo de moneda: el nodo suele traer solo la cifra.
+  const single = parseClp(text);
+  return single === null ? [] : [single];
 }
 
 /**

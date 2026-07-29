@@ -108,11 +108,8 @@ export const STORES: StoreAdapter[] = [
   createBrowserAdapter({
     id: 'ikea',
     label: 'IKEA',
-    base: 'https://www.ikea.cl',
-    buildUrls: (q) => [
-      `https://www.ikea.cl/search?q=${enc(q)}`,
-      `https://www.ikea.com/cl/es/search/?q=${enc(q)}`,
-    ],
+    base: 'https://www.ikea.com',
+    buildUrls: (q) => [`https://www.ikea.com/cl/es/search/?q=${enc(q)}`],
     settleMs: 2500,
   }),
   createHtmlSearchAdapter({
@@ -128,6 +125,7 @@ export const STORES: StoreAdapter[] = [
   createBrowserAdapter({
     id: 'easy',
     label: 'Easy',
+    enabled: false,
     base: 'https://www.easy.cl',
     buildUrls: (q) => [
       `https://www.easy.cl/search?q=${enc(q)}`,
@@ -139,6 +137,7 @@ export const STORES: StoreAdapter[] = [
   createBrowserAdapter({
     id: 'paris',
     label: 'Paris',
+    enabled: false,
     base: 'https://www.paris.cl',
     buildUrls: (q) => [`https://www.paris.cl/search/?q=${enc(q)}`],
     cardSelectors: ['[data-testid^="paris-vertical-pod"]', '[data-testid*="pod"]'],
@@ -151,6 +150,7 @@ export const STORES: StoreAdapter[] = [
   createBrowserAdapter({
     id: 'ripley',
     label: 'Ripley',
+    enabled: false,
     base: 'https://simple.ripley.cl',
     buildUrls: (q) => [
       `https://simple.ripley.cl/search/${enc(q)}`,
@@ -161,6 +161,7 @@ export const STORES: StoreAdapter[] = [
   createBrowserAdapter({
     id: 'lider',
     label: 'Lider',
+    enabled: false,
     base: 'https://www.lider.cl',
     buildUrls: (q) => [`https://www.lider.cl/search?query=${enc(q)}`],
     settleMs: 2500,
