@@ -96,7 +96,12 @@ export function useProducts(): AsyncState<Product[]> {
       q,
       (snapshot) => {
         setState({
-          data: snapshot.docs.map((doc) => toProduct(doc.id, doc.data())),
+          // Al borrar una busqueda sus productos quedan sin ninguna, esperando
+          // a que el scraper los limpie. Hasta entonces no deben verse: son
+          // justo lo que el usuario acaba de pedir que desapareciera.
+          data: snapshot.docs
+            .map((doc) => toProduct(doc.id, doc.data()))
+            .filter((product) => product.searchIds.length > 0),
           loading: false,
           error: null,
         });

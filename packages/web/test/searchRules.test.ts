@@ -34,6 +34,12 @@ test('significantWords descarta preposiciones y articulos', () => {
   ]);
 });
 
+test('significantWords prefiere las palabras vacias antes que no devolver nada', () => {
+  // Quedarse sin palabras deja la busqueda sin filtro y entra todo el catalogo.
+  assert.deepEqual(significantWords('de la'), ['de', 'la']);
+  assert.deepEqual(significantWords('!!!'), []);
+});
+
 test('significantWords no repite palabras', () => {
   assert.deepEqual(significantWords('caja caja organizadora'), ['caja', 'organizadora']);
 });
@@ -51,7 +57,8 @@ test('deriveMatchRules exige la raiz de cada palabra del nombre', () => {
 });
 
 test('deriveMatchRules tolera un nombre sin palabras utiles', () => {
-  assert.deepEqual(deriveMatchRules('de la'), { requireAll: [], exclude: [] });
+  assert.deepEqual(deriveMatchRules('de la'), { requireAll: [['de'], ['la']], exclude: [] });
+  assert.deepEqual(deriveMatchRules('!!!'), { requireAll: [], exclude: [] });
 });
 
 test('toSearchId produce identificadores estables y seguros', () => {
@@ -100,6 +107,12 @@ test('validateDraft acepta una busqueda razonable', () => {
 test('validateDraft exige nombre y al menos un termino', () => {
   assert.deepEqual(validateDraft(draft({ label: '  ' })).ok, false);
   assert.deepEqual(validateDraft(draft({ queries: [] })).ok, false);
+});
+
+test('validateDraft rechaza una busqueda sin palabras obligatorias', () => {
+  const result = validateDraft(draft({ match: { requireAll: [], exclude: [] } }));
+
+  assert.equal(result.ok, false, 'sin filtro entraria todo el catalogo de cada tienda');
 });
 
 test('validateDraft pone techo a los terminos, porque cada uno cuesta una consulta por tienda', () => {

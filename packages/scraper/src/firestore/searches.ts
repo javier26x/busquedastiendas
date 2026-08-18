@@ -14,10 +14,20 @@ import { COLLECTIONS } from '../pipeline/persist.js';
 export async function loadSearches(db: Firestore): Promise<SearchDefinition[]> {
   const snapshot = await db.collection(COLLECTIONS.searches).get();
 
-  const searches = snapshot.docs.flatMap((doc) => {
+  const searches: SearchDefinition[] = [];
+  const discarded: string[] = [];
+
+  for (const doc of snapshot.docs) {
     const parsed = parseSearchDoc(doc.id, doc.data());
-    return parsed ? [parsed] : [];
-  });
+    if (parsed) searches.push(parsed);
+    else discarded.push(doc.id);
+  }
+
+  // Se avisa porque desde el panel la busqueda se sigue viendo: sin esto,
+  // "no trae nada" no tendria explicacion visible en ninguna parte.
+  if (discarded.length > 0) {
+    console.warn(`Busqueda(s) ignorada(s) por estar incompletas: ${discarded.join(', ')}`);
+  }
 
   return searches.sort((a, b) => a.label.localeCompare(b.label, 'es'));
 }
@@ -36,13 +46,20 @@ export function parseSearchDoc(id: string, data: Record<string, unknown>): Searc
 
   const stored = parseMatchRules(data['match']);
 
+  // Una busqueda sin reglas acepta cualquier titulo que devuelva la tienda
+  // y contamina el panel con productos ajenos. Nunca se deja sin filtro.
+  const match =
+    stored.requireAll.length > 0 ? stored : fallbackMatchRules(id, label, stored.exclude);
+
+  // Si ni siquiera se pudo deducir un requisito del nombre, es preferible no
+  // correrla: un filtro vacio deja pasar todo el catalogo de cada tienda.
+  if (match.requireAll.length === 0) return null;
+
   return {
     id,
     label,
     queries,
-    // Una busqueda sin reglas acepta cualquier titulo que devuelva la tienda
-    // y contamina el panel con productos ajenos. Nunca se deja sin filtro.
-    match: stored.requireAll.length > 0 ? stored : fallbackMatchRules(id, label, stored.exclude),
+    match,
     enabled: data['enabled'] !== false,
   };
 }
@@ -78,14 +95,20 @@ const STOPWORDS = new Set([
  * panel; aqui existe para los documentos que se guardaron sin ella.
  */
 export function deriveRequireAll(label: string): string[][] {
-  const words = [
+  const all = [
     ...new Set(
       normalizeText(label)
         .replace(/[^a-z0-9\s]/g, ' ')
         .split(/\s+/)
-        .filter((word) => word.length > 1 && !STOPWORDS.has(word)),
+        .filter(Boolean),
     ),
   ];
+
+  const significant = all.filter((word) => word.length > 1 && !STOPWORDS.has(word));
+
+  // Un nombre hecho solo de palabras vacias ("de la") no deja nada que exigir,
+  // y quedarse sin requisitos es peor que exigir de mas: se usan todas.
+  const words = significant.length > 0 ? significant : all;
 
   return words.map((word) => [stemWord(word)]);
 }
@@ -144,17 +167,29 @@ function asStringArray(value: unknown): string[] {
   });
 }
 
+/** Marca de que la siembra ya ocurrio; asi no se repite nunca. */
+const SEED_MARKER = 'searches-seeded';
+
 /**
- * Crea las busquedas de ejemplo solo si la coleccion esta vacia.
+ * Crea las busquedas de ejemplo una sola vez, en un proyecto nuevo.
  *
- * Importante que no sobrescriba: si el usuario edito o borro una busqueda
- * desde la web, la proxima corrida no debe resucitarla.
+ * No alcanza con mirar si la coleccion esta vacia: si el usuario borra todas
+ * sus busquedas desde el panel, la corrida siguiente se las volveria a llenar
+ * con las de ejemplo. Por eso queda una marca aparte, que tambien se escribe
+ * cuando ya habia busquedas (para no sembrar en proyectos que vienen de una
+ * version anterior a esta marca).
  */
 export async function bootstrapSearches(db: Firestore): Promise<number> {
+  const marker = db.collection(COLLECTIONS.meta).doc(SEED_MARKER);
   const collection = db.collection(COLLECTIONS.searches);
-  const existing = await collection.limit(1).get();
 
-  if (!existing.empty) return 0;
+  const [seeded, existing] = await Promise.all([marker.get(), collection.limit(1).get()]);
+  if (seeded.exists) return 0;
+
+  if (!existing.empty) {
+    await marker.set({ seededAt: new Date(), created: 0, reason: 'ya habia busquedas' });
+    return 0;
+  }
 
   const batch = db.batch();
   const now = new Date();
@@ -171,6 +206,8 @@ export async function bootstrapSearches(db: Firestore): Promise<number> {
       updatedAt: now,
     });
   }
+
+  batch.set(marker, { seededAt: now, created: CODE_SEARCHES.length, reason: 'proyecto vacio' });
 
   await batch.commit();
   return CODE_SEARCHES.length;

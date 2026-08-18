@@ -97,6 +97,42 @@ test('las busquedas se acumulan cuando un producto aparece en ambas', () => {
   assert.deepEqual(record.searchIds, ['bodegas-jardin', 'cajas-organizadoras']);
 });
 
+test('una busqueda que corrio y ya no lo encontro deja de etiquetarlo', () => {
+  const first = buildRecord(null, offer({ searchIds: ['cajas-organizadoras', 'libreros'] }), T0, 'run-1')
+    .record;
+
+  const { record } = buildRecord(
+    first,
+    offer({ searchIds: ['cajas-organizadoras'] }),
+    T1,
+    'run-2',
+    new Set(['cajas-organizadoras', 'libreros']),
+  );
+
+  assert.deepEqual(
+    record.searchIds,
+    ['cajas-organizadoras'],
+    'sin esto el producto queda colgando de "libreros" para siempre',
+  );
+});
+
+test('una busqueda que no corrio conserva su etiqueta', () => {
+  const first = buildRecord(null, offer({ searchIds: ['cajas-organizadoras', 'libreros'] }), T0, 'run-1')
+    .record;
+
+  // Corrida limitada con --searches=cajas-organizadoras: "libreros" ni se
+  // intento, asi que su ausencia no dice nada.
+  const { record } = buildRecord(
+    first,
+    offer({ searchIds: ['cajas-organizadoras'] }),
+    T1,
+    'run-2',
+    new Set(['cajas-organizadoras']),
+  );
+
+  assert.deepEqual(record.searchIds, ['cajas-organizadoras', 'libreros']);
+});
+
 test('normalizeOffers filtra lo irrelevante y marca las ofertas', () => {
   const search = getSearch('cajas-organizadoras');
   assert.ok(search);
@@ -215,11 +251,23 @@ test('parseSearchDoc descarta documentos sin terminos, que no se pueden consulta
   assert.equal(parseSearchDoc('x', { label: 'X' }), null);
 });
 
-test('parseSearchDoc sobrevive a un match ausente o malformado', () => {
-  const parsed = parseSearchDoc('x', { label: 'X', queries: ['algo'], match: 'basura' });
+test('parseSearchDoc sobrevive a un match ausente o malformado derivandolo del nombre', () => {
+  const parsed = parseSearchDoc('libreros', {
+    label: 'Libreros',
+    queries: ['librero'],
+    match: 'basura',
+  });
 
   assert.ok(parsed);
-  assert.deepEqual(parsed.match, { requireAll: [], exclude: [] });
+  assert.deepEqual(
+    parsed.match,
+    { requireAll: [['librero']], exclude: [] },
+    'sin reglas el filtro aceptaria el catalogo entero de cada tienda',
+  );
+});
+
+test('parseSearchDoc descarta la busqueda cuando no hay nada que exigir', () => {
+  assert.equal(parseSearchDoc('raro', { label: '???', queries: ['algo'] }), null);
 });
 
 test('las reglas del codigo se serializan sin arreglos anidados', () => {
@@ -406,5 +454,51 @@ test('una rebaja creible si se conserva', () => {
   const offers = extractDomCards($, 'https://x.cl', ['[data-testid="pod"]']);
 
   assert.equal(offers[0]?.price, 12990);
+  assert.equal(offers[0]?.listPrice, 19990);
+});
+
+test('un precio corrido, sin separador de miles, si es un precio', () => {
+  // La red anti-medidas descartaba "129990" y dejaba la tarjeta sin precio.
+  assert.deepEqual(extractPrices('129990'), [129990]);
+  assert.deepEqual(extractPrices('129.990'), [129990]);
+  assert.deepEqual(extractPrices('26x35x15 cm'), [], 'las medidas siguen fuera');
+});
+
+test('el precio en cuotas no se toma como precio del producto', () => {
+  const $ = cheerio.load(`
+    <div data-testid="pod">
+      <a href="/producto/caja/p">Caja organizadora con tapa 60 litros</a>
+      <span class="price">$59.990</span>
+      <span class="price-cuotas">12 cuotas de $4.990</span>
+    </div>`);
+
+  const offers = extractDomCards($, 'https://x.cl', ['[data-testid="pod"]']);
+
+  assert.equal(offers[0]?.price, 59990, 'la cuota es menor pero no es el precio');
+  assert.equal(offers[0]?.listPrice, null);
+});
+
+test('el precio de tarjeta no desplaza al precio que paga cualquiera', () => {
+  // Falabella y Sodimac publican el precio CMR junto al normal, y es el mas
+  // bajo: tomarlo mostraria un precio que exige tener esa tarjeta.
+  const producto = {
+    productId: 'X',
+    displayName: 'Caja organizadora con tapa apilable',
+    prices: [
+      { type: 'NORMAL', priceWithoutFormatting: 19990 },
+      { type: 'INTERNET', priceWithoutFormatting: 14990 },
+      { type: 'CMR', label: 'Precio Tarjeta CMR', priceWithoutFormatting: 9990 },
+    ],
+  };
+  const state = { props: { results: [producto] } };
+  const html = `<html><body><script id="__NEXT_DATA__" type="application/json">${JSON.stringify(
+    state,
+  )}</script></body></html>`;
+
+  const offers = extractStructuredOffers(cheerio.load(html), 'https://x.cl', {
+    buildProductUrl: () => 'https://x.cl/p/1',
+  });
+
+  assert.equal(offers[0]?.price, 14990, 'el de internet, no el de la tarjeta');
   assert.equal(offers[0]?.listPrice, 19990);
 });

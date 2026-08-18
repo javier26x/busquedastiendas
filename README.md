@@ -3,8 +3,9 @@
 Monitorea dos búsquedas en tiendas chilenas y las muestra en un panel web privado,
 ordenables por **precio**, **variación de precio** y **si están en oferta**.
 
-- **Búsquedas**: `bodegas de jardín` y `cajas organizadoras`.
-- **Tiendas**: Mercado Libre, Easy, Paris, Sodimac y Falabella.
+- **Búsquedas**: se administran desde el panel; arranca con `bodegas de jardín` y
+  `cajas organizadoras`.
+- **Tiendas activas**: Falabella, Sodimac e IKEA (ver [estado de cada tienda](#estado-verificado-de-cada-tienda)).
 - **Acceso**: solo `javier.neo@gmail.com`, con Google Sign-In.
 - **Actualización**: dos veces al día vía GitHub Actions (gratis, sin plan Blaze).
 
@@ -14,7 +15,7 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 GitHub Actions (cron 2×/día)
         │
         ▼
-   packages/scraper ──consulta──► Mercado Libre · Easy · Paris · Sodimac · Falabella
+   packages/scraper ──consulta──► Falabella · Sodimac · IKEA
         │
         │ normaliza, filtra ruido, calcula variación y descuento
         ▼
@@ -24,8 +25,9 @@ GitHub Actions (cron 2×/día)
    packages/web (Firebase Hosting) ◄──Google Sign-In── javier.neo@gmail.com
 ```
 
-El scraper escribe con el Admin SDK; el panel **solo lee**. Ningún cliente puede
-escribir en Firestore (ver `firestore.rules`).
+El scraper escribe con el Admin SDK. Desde el panel solo se pueden administrar las
+búsquedas, y desligarles productos al borrar una: los precios y el historial son
+únicamente del scraper (ver `firestore.rules`).
 
 ## Puesta en marcha
 
@@ -61,7 +63,7 @@ packages/web/             React + Vite. Panel privado con Google Sign-In.
   src/lib/sort.ts         Orden y filtros (lógica pura, con tests).
   src/components/         Tabla, filtros, tarjetas de resumen, detalle con gráfico.
 
-firestore.rules           Quién puede leer. Nadie puede escribir desde el cliente.
+firestore.rules           Quién lee, y lo único que el panel puede escribir.
 .github/workflows/        Cron del scraper, CI y despliegue del panel.
 ```
 
@@ -76,7 +78,8 @@ firestore.rules           Quién puede leer. Nadie puede escribir desde el clien
 | `npm run scrape -- --searches=bodegas-jardin` | Limita las búsquedas |
 | `npm run diagnose` | Prueba URLs candidatas por tienda y describe qué devuelven |
 | `npm run seed` | Carga productos de ejemplo en Firestore |
-| `npm test` | Tests de la lógica pura (32 casos) |
+| `npm run purge -- --store=ikea` | Borra los productos de una tienda y su historial |
+| `npm test` | Tests de la lógica pura (74 casos) |
 | `npm run typecheck` | TypeScript en ambos paquetes |
 | `npm run build` | Compila el panel a `packages/web/dist` |
 
@@ -134,7 +137,15 @@ siguiente corrida del cron.
 
 Las búsquedas viven en la colección `searches` de Firestore, que es la fuente de
 verdad. Las definiciones de `packages/scraper/src/config/searches.ts` solo se usan
-como semilla cuando la colección está vacía: el scraper nunca pisa lo que edites.
+para sembrar un proyecto nuevo, una única vez: el scraper nunca pisa lo que edites
+ni resucita lo que borres.
+
+### Borrar una búsqueda
+
+El panel le quita esa etiqueta a sus productos. Los que también pertenecen a otra
+búsqueda se conservan con su historial intacto; los que quedan sin ninguna
+desaparecen del panel al instante y los borra la siguiente corrida del scraper,
+que es quien puede arrastrar también su subcolección `history`.
 
 ### Filtros de relevancia
 

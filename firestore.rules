@@ -22,7 +22,16 @@ service cloud.firestore {
 
     match /products/{productId} {
       allow read: if isAllowed();
-      allow write: if false;
+
+      // Al borrar una busqueda, el panel desliga sus productos quitando esa
+      // etiqueta. Solo puede tocar `searchIds`: el resto de los campos, y el
+      // borrado del documento, son del scraper, que ademas puede eliminar la
+      // subcoleccion de historial (un cliente dejaria esos registros huerfanos).
+      allow update: if isAllowed()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['searchIds'])
+        && request.resource.data.searchIds is list;
+
+      allow create, delete: if false;
 
       match /history/{entryId} {
         allow read: if isAllowed();

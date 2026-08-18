@@ -78,7 +78,7 @@ export function SearchManager({ searches, counts, onClose }: Props): ReactNode {
                   enabled: !search.enabled,
                 })
               }
-              onDelete={(search, alsoProducts) => void remove(search.id, alsoProducts)}
+              onDelete={(search) => void remove(search.id)}
             />
           ) : (
             <SearchForm
@@ -86,7 +86,7 @@ export function SearchManager({ searches, counts, onClose }: Props): ReactNode {
               saving={saving}
               onCancel={() => setMode({ kind: 'lista' })}
               onSubmit={async (draft) => {
-                if (await save(draft)) setMode({ kind: 'lista' });
+                if (await save(draft, { create: mode.search === null })) setMode({ kind: 'lista' });
               }}
             />
           )}
@@ -111,7 +111,7 @@ function SearchList({
   onNew: () => void;
   onEdit: (search: SearchDoc) => void;
   onToggle: (search: SearchDoc) => void;
-  onDelete: (search: SearchDoc, alsoProducts: boolean) => void;
+  onDelete: (search: SearchDoc) => void;
 }): ReactNode {
   const [confirming, setConfirming] = useState<string | null>(null);
 
@@ -182,27 +182,18 @@ function SearchList({
                   </button>
                   <button
                     type="button"
-                    className="btn btn--sm"
-                    onClick={() => {
-                      onDelete(search, false);
-                      setConfirming(null);
-                    }}
-                  >
-                    Solo la búsqueda
-                  </button>
-                  <button
-                    type="button"
                     className="btn btn--sm btn--danger"
                     onClick={() => {
-                      onDelete(search, true);
+                      onDelete(search);
                       setConfirming(null);
                     }}
                   >
-                    También sus productos
+                    Borrar
                   </button>
                 </div>
                 <p className="muted small">
-                  Los productos que también estén en otra búsqueda se conservan.
+                  Sus productos se desligan de esta búsqueda. Los que también estén en otra se
+                  conservan con su historial; el resto los limpia la próxima corrida.
                 </p>
               </div>
             )}

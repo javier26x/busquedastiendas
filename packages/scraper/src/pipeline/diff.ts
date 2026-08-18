@@ -27,6 +27,12 @@ export function buildRecord(
   offer: NormalizedOffer,
   now: Date,
   runId: string,
+  /**
+   * Busquedas ejecutadas en esta corrida. Sirve para poder *quitar* etiquetas:
+   * si una busqueda corrio y ya no encontro este producto, deja de aplicarle.
+   * Las que no corrieron se conservan intactas.
+   */
+  ranSearchIds: ReadonlySet<string> = new Set(),
 ): DiffResult {
   const base = {
     key: offer.key,
@@ -73,7 +79,12 @@ export function buildRecord(
     };
   }
 
-  const searchIds = [...new Set([...existing.searchIds, ...offer.searchIds])].sort();
+  // Se conservan las etiquetas de busquedas que no corrieron, y de las que
+  // si corrieron solo las que volvieron a encontrarlo. Unir sin quitar dejaba
+  // productos colgando de una busqueda para siempre aunque se afinaran sus
+  // reglas y ya no correspondieran.
+  const kept = existing.searchIds.filter((id) => !ranSearchIds.has(id));
+  const searchIds = [...new Set([...kept, ...offer.searchIds])].sort();
   const priceMoved = offer.price !== existing.price;
 
   const record: ProductRecord = {

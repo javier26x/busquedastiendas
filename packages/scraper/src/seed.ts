@@ -10,7 +10,7 @@
 import { resolveStores } from './config/stores.js';
 import { getDb } from './firestore/client.js';
 import { bootstrapSearches, loadSearches } from './firestore/searches.js';
-import { persistOffers, saveRunSummary } from './pipeline/persist.js';
+import { markSearchesRun, persistOffers, saveRunSummary } from './pipeline/persist.js';
 import { buildSummary, runScrape } from './pipeline/run.js';
 
 function log(msg: string): void {
@@ -43,7 +43,18 @@ async function main(): Promise<void> {
   });
 
   const now = new Date();
-  const stats = await persistOffers(db, result.offers, result.runId, now);
+
+  // Sin esto el panel muestra "Pendiente de la primera corrida" al lado de los
+  // productos que acaba de sembrar, que es justo lo contrario de lo que pasa.
+  await markSearchesRun(db, searches, now);
+
+  const stats = await persistOffers(
+    db,
+    result.offers,
+    result.runId,
+    now,
+    new Set(result.completedSearchIds),
+  );
   const found = result.stores.reduce((sum, store) => sum + store.found, 0);
 
   await saveRunSummary(

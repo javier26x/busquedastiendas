@@ -23,6 +23,13 @@ export interface RunResult {
   errors: string[];
   runId: string;
   startedAt: Date;
+  /**
+   * Busquedas cuyas consultas respondieron todas, en todas las tiendas.
+   *
+   * Solo para ellas se puede afirmar que un producto que no aparecio "ya no
+   * corresponde": si una consulta fallo, la ausencia puede ser del error.
+   */
+  completedSearchIds: string[];
 }
 
 /**
@@ -39,6 +46,7 @@ export async function runScrape(options: RunOptions): Promise<RunResult> {
   const errors: string[] = [];
   const storeStats: StoreRunStat[] = [];
   const collected: NormalizedOffer[] = [];
+  const failedSearches = new Set<string>();
 
   for (const store of options.stores) {
     const storeStart = Date.now();
@@ -71,6 +79,7 @@ export async function runScrape(options: RunOptions): Promise<RunResult> {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           firstError ??= message;
+          failedSearches.add(search.id);
           errors.push(`${store.id} / "${query}": ${message}`);
           options.log(`[${store.id}] fallo la consulta "${query}": ${message}`);
         }
@@ -93,7 +102,16 @@ export async function runScrape(options: RunOptions): Promise<RunResult> {
     }
   }
 
-  return { offers: mergeOffers(collected), stores: storeStats, errors, runId, startedAt };
+  return {
+    offers: mergeOffers(collected),
+    stores: storeStats,
+    errors,
+    runId,
+    startedAt,
+    completedSearchIds: options.searches
+      .map((search) => search.id)
+      .filter((id) => !failedSearches.has(id)),
+  };
 }
 
 /** Id legible y ordenable: 2026-07-26T18-30-00-000Z */

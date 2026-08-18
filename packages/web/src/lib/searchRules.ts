@@ -122,12 +122,20 @@ export function stem(word: string): string {
 
 /** Palabras utiles de un texto, ya normalizadas y sin repetir. */
 export function significantWords(text: string): string[] {
-  const words = normalize(text)
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((word) => word.length > 1 && !STOPWORDS.has(word));
+  const all = [
+    ...new Set(
+      normalize(text)
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .split(/\s+/)
+        .filter(Boolean),
+    ),
+  ];
 
-  return [...new Set(words)];
+  const significant = all.filter((word) => word.length > 1 && !STOPWORDS.has(word));
+
+  // Un nombre hecho solo de palabras vacias no deja nada que exigir, y sin
+  // requisitos el filtro acepta cualquier titulo. Se prefiere exigir de mas.
+  return significant.length > 0 ? significant : all;
 }
 
 /**
@@ -206,6 +214,12 @@ export function validateDraft(draft: SearchDraft): ValidationResult {
     errors.push('Algun termino es demasiado largo.');
   }
 
+  // Sin ninguna palabra obligatoria el scraper acepta cualquier titulo que
+  // devuelvan las tiendas, y el panel se llena de productos que no tienen nada
+  // que ver. Se pide al menos una.
+  if (draft.match.requireAll.length === 0) {
+    errors.push('Deja al menos una palabra obligatoria, o la busqueda traera cualquier cosa.');
+  }
   if (draft.match.requireAll.length > 10) {
     errors.push('Maximo 10 lineas de palabras obligatorias.');
   }

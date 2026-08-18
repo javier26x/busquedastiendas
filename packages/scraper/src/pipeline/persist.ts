@@ -12,6 +12,8 @@ export const COLLECTIONS = {
   history: 'history',
   searches: 'searches',
   runs: 'runs',
+  /** Marcas internas del scraper. Ningun cliente la lee (ver firestore.rules). */
+  meta: 'meta',
 } as const;
 
 /** Firestore limita a 500 operaciones por batch; dejamos margen. */
@@ -33,6 +35,7 @@ export async function persistOffers(
   offers: NormalizedOffer[],
   runId: string,
   now: Date,
+  ranSearchIds: ReadonlySet<string> = new Set(),
 ): Promise<PersistStats> {
   const stats: PersistStats = { created: 0, updated: 0, priceChanges: 0, drops: 0, rises: 0 };
   if (offers.length === 0) return stats;
@@ -52,7 +55,13 @@ export async function persistOffers(
 
   for (const offer of offers) {
     const ref = products.doc(offer.key);
-    const { record, history, kind } = buildRecord(existing.get(offer.key) ?? null, offer, now, runId);
+    const { record, history, kind } = buildRecord(
+      existing.get(offer.key) ?? null,
+      offer,
+      now,
+      runId,
+      ranSearchIds,
+    );
 
     batch.set(ref, toFirestore(record), { merge: true });
     ops += 1;
@@ -175,4 +184,32 @@ export async function saveRunSummary(db: Firestore, summary: RunSummary): Promis
       startedAt: Timestamp.fromDate(summary.startedAt),
       finishedAt: Timestamp.fromDate(summary.finishedAt),
     });
+}
+
+/**
+ * Borra los productos que ya no pertenecen a ninguna busqueda.
+ *
+ * Quedan asi cuando se borra una busqueda desde el panel: este solo puede
+ * desligarlos, porque eliminar el documento desde el cliente dejaria huerfana
+ * su subcoleccion de historial. `recursiveDelete` si la arrastra.
+ *
+ * Se recorre la coleccion en vez de consultar `searchIds == []` porque el
+ * indice de un arreglo vacio es terreno dudoso y una consulta que devuelve
+ * cero por esa razon se ve identica a "no habia nada que borrar". Con `select`
+ * cada documento viaja practicamente vacio, y a esta escala son unas cientos
+ * de lecturas dos veces al dia.
+ */
+export async function deleteOrphanProducts(db: Firestore): Promise<number> {
+  const snapshot = await db.collection(COLLECTIONS.products).select('searchIds').get();
+
+  const orphans = snapshot.docs.filter((doc) => {
+    const ids = doc.get('searchIds');
+    return Array.isArray(ids) && ids.length === 0;
+  });
+
+  for (const doc of orphans) {
+    await db.recursiveDelete(doc.ref);
+  }
+
+  return orphans.length;
 }

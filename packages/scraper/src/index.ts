@@ -9,7 +9,12 @@
 import { SEARCHES } from './config/searches.js';
 import { resolveStores } from './config/stores.js';
 import { runScrape, buildSummary } from './pipeline/run.js';
-import { persistOffers, saveRunSummary, markSearchesRun } from './pipeline/persist.js';
+import {
+  deleteOrphanProducts,
+  markSearchesRun,
+  persistOffers,
+  saveRunSummary,
+} from './pipeline/persist.js';
 import { getDb } from './firestore/client.js';
 import { bootstrapSearches, loadSearches } from './firestore/searches.js';
 import { closeBrowser } from './lib/browser.js';
@@ -84,29 +89,35 @@ function selectSearches(available: SearchDefinition[], ids: string[] | null): Se
   return selected;
 }
 
+interface SearchSource {
+  searches: SearchDefinition[];
+  /** Si vinieron de Firestore. Las del codigo son un respaldo y no viven alli. */
+  stored: boolean;
+}
+
 /**
  * Trae las busquedas desde Firestore, que es donde las administra el usuario
- * desde el panel. Si no hay credenciales o la coleccion falla, cae a las
- * definiciones del codigo para que un dry-run siga siendo util.
+ * desde el panel. Solo si Firestore no responde se cae a las definiciones del
+ * codigo, para que un dry-run sin credenciales siga siendo util.
+ *
+ * Que Firestore responda y no haya ninguna no es lo mismo: significa que el
+ * usuario las borro todas, y ahi corresponde no buscar nada en vez de volver
+ * a las de ejemplo.
  */
-async function fetchSearches(): Promise<SearchDefinition[]> {
+async function fetchSearches(): Promise<SearchSource> {
   try {
     const db = getDb();
     const created = await bootstrapSearches(db);
     if (created > 0) log(`Coleccion vacia: se sembraron ${created} busquedas de ejemplo`);
 
-    const searches = await loadSearches(db);
-    if (searches.length > 0) return searches;
-
-    log('No hay busquedas en Firestore; se usan las del codigo');
+    return { searches: await loadSearches(db), stored: true };
   } catch (error) {
     log(
       `No se pudieron leer las busquedas de Firestore, se usan las del codigo: ` +
         `${error instanceof Error ? error.message : String(error)}`,
     );
+    return { searches: SEARCHES, stored: false };
   }
-
-  return SEARCHES;
 }
 
 const CLP = new Intl.NumberFormat('es-CL', {
@@ -134,10 +145,18 @@ function printOffers(offers: NormalizedOffer[]): void {
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const stores = resolveStores(options.stores);
-  const searches = selectSearches(await fetchSearches(), options.searches);
+  const source = await fetchSearches();
+  const searches = selectSearches(source.searches, options.searches);
 
   if (searches.length === 0) {
     log('No hay busquedas activas. Crea una desde el panel y vuelve a ejecutar.');
+
+    // Sin busquedas no hay nada que buscar, pero si puede haber productos de
+    // las que se borraron esperando que alguien los saque.
+    if (!options.dryRun && source.stored) {
+      const removed = await deleteOrphanProducts(getDb());
+      if (removed > 0) log(`Borrados ${removed} productos de busquedas eliminadas`);
+    }
     return;
   }
 
@@ -180,8 +199,21 @@ async function main(): Promise<void> {
   const db = getDb();
   const now = new Date();
 
-  await markSearchesRun(db, searches, now);
-  const stats = await persistOffers(db, result.offers, result.runId, now);
+  // Solo se anota la fecha de las busquedas que existen como documento. Con
+  // las del codigo se crearian documentos con `lastRunAt` y nada mas: la web
+  // los mostraria como pestanas vacias y bloquearian la siembra inicial.
+  if (source.stored) await markSearchesRun(db, searches, now);
+
+  const stats = await persistOffers(
+    db,
+    result.offers,
+    result.runId,
+    now,
+    new Set(result.completedSearchIds),
+  );
+
+  const orphans = await deleteOrphanProducts(db);
+  if (orphans > 0) log(`Borrados ${orphans} productos que ya no pertenecen a ninguna busqueda`);
 
   const summary = buildSummary(
     result,

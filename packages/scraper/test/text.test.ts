@@ -14,6 +14,18 @@ test('slugify produce claves seguras para Firestore', () => {
   assert.ok(!slugify('a/b/c').includes('/'), 'sin barras que rompan las rutas');
 });
 
+test('dos textos largos con el mismo prefijo no comparten clave', () => {
+  // Pasa con las URL de IKEA: se diferencian solo al final. Si el recorte las
+  // iguala, dos productos comparten documento y se pisan el precio.
+  const prefix = '/cl/es/p/'.padEnd(150, 'a');
+  const uno = slugify(`${prefix}-bestaa-40556123`);
+  const dos = slugify(`${prefix}-bestaa-40556124`);
+
+  assert.notEqual(uno, dos);
+  assert.ok(uno.length <= 120, 'sigue siendo una clave manejable');
+  assert.equal(uno, slugify(`${prefix}-bestaa-40556123`), 'y es estable entre corridas');
+});
+
 test('el filtro de bodegas de jardin descarta bodegas de vino y bodegaje', () => {
   const search = getSearch('bodegas-jardin');
   assert.ok(search);

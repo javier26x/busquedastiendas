@@ -10,14 +10,35 @@ export function normalizeText(input: string): string {
     .trim();
 }
 
+/** Largo maximo del slug. Firestore admite mas, pero conviene una clave legible. */
+const SLUG_MAX = 120;
+/** Sufijo de desempate: guion + hash de 7 caracteres. */
+const HASH_LEN = 8;
+
 /** Convierte texto libre en un identificador seguro para claves de Firestore. */
 export function slugify(input: string): string {
-  return (
-    normalizeText(input)
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 120) || 'x'
-  );
+  const slug = normalizeText(input)
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  if (!slug) return 'x';
+  if (slug.length <= SLUG_MAX) return slug;
+
+  // Recortar a secas hace colisionar dos URLs largas con el mismo prefijo
+  // (pasa en IKEA), y entonces dos productos distintos comparten documento y
+  // se pisan el precio inventando variaciones. El sufijo depende del texto
+  // completo, asi que solo coinciden si de verdad son el mismo.
+  return `${slug.slice(0, SLUG_MAX - HASH_LEN)}-${shortHash(slug)}`;
+}
+
+/** FNV-1a de 32 bits en base36. Alcanza de sobra para desempatar slugs. */
+function shortHash(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36).padStart(HASH_LEN - 1, '0');
 }
 
 /**

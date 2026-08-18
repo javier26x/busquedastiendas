@@ -131,7 +131,10 @@ function cardToOffer(
   const priceNodes = card
     .find(PRICE_SELECTOR)
     .toArray()
-    .filter((node) => $(node).find(PRICE_SELECTOR).length === 0);
+    .filter((node) => $(node).find(PRICE_SELECTOR).length === 0)
+    // "12 cuotas de $9.990" es un importe real pero no el precio del
+    // producto, y al ser el mas bajo se llevaria el puesto de precio vigente.
+    .filter((node) => !INSTALMENT_TEXT.test($(node).text()));
 
   const prices = priceNodes.flatMap((node) => extractPrices($(node).text()));
 
@@ -162,6 +165,9 @@ function cardToOffer(
 
 const PRICE_SELECTOR = '[data-testid*="price" i], [class*="price" i], [class*="precio" i]';
 
+/** Pagos a plazo, descuentos por medio de pago y precios por unidad. */
+const INSTALMENT_TEXT = /cuota|mensual|c\/u|por mes|x mes|desde \$/i;
+
 /**
  * Importes contenidos en un texto, cada uno por separado.
  *
@@ -181,7 +187,9 @@ export function extractPrices(text: string): number[] {
   // Sin simbolo de moneda solo se acepta un nodo que contenga la cifra y
   // nada mas. Si no, las medidas del producto pasarian por precio: de
   // "26x35x15 cm" salia un importe de $263.515.
-  if (!/^\s*\$?\s*\d{1,3}(?:\.\d{3})*\s*$/.test(text)) return [];
+  // Se acepta con separador de miles ("129.990") o corrido ("129990"), pero
+  // nada mas: "26x35x15 cm" traeria digitos y no es un precio.
+  if (!/^\s*\$?\s*(?:\d{1,3}(?:\.\d{3})+|\d+)\s*$/.test(text)) return [];
 
   const single = parseClp(text);
   return single === null ? [] : [single];

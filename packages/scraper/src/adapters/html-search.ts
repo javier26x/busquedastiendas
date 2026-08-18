@@ -343,7 +343,16 @@ function extractStatePrice(node: Record<string, unknown>): number | null {
   return values.length > 0 ? Math.min(...values) : null;
 }
 
-/** Todos los precios de un nodo, en pesos. */
+/**
+ * Precios que exigen un medio de pago concreto.
+ *
+ * Falabella y Sodimac publican junto al precio normal el de su tarjeta CMR,
+ * que casi siempre es el mas bajo. Tomarlo como precio efectivo mostraria
+ * uno que no paga quien no tiene esa tarjeta.
+ */
+const CONDITIONAL_PRICE = /cmr|tarjeta|falabella|socio|puntos/i;
+
+/** Precios de un nodo, en pesos, sin los condicionados a un medio de pago. */
 function priceValues(node: Record<string, unknown>): number[] {
   const prices = node['prices'];
   if (!Array.isArray(prices)) return [];
@@ -351,6 +360,9 @@ function priceValues(node: Record<string, unknown>): number[] {
   return prices.flatMap((entry) => {
     if (!entry || typeof entry !== 'object') return [];
     const row = entry as Record<string, unknown>;
+
+    const kind = `${asString(row['type']) ?? ''} ${asString(row['label']) ?? ''}`;
+    if (CONDITIONAL_PRICE.test(kind)) return [];
 
     const clean = row['priceWithoutFormatting'];
     if (typeof clean === 'number' || typeof clean === 'string') {
