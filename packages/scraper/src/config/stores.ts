@@ -5,6 +5,7 @@ import { createHtmlSearchAdapter } from '../adapters/html-search.js';
 import { createFallbackAdapter } from '../adapters/fallback.js';
 import { createDomCardsAdapter } from '../adapters/dom-cards.js';
 import { createBrowserAdapter } from '../adapters/browser.js';
+import { createPcFactoryAdapter } from '../adapters/pcfactory.js';
 import { fixtureAdapter } from '../adapters/fixture.js';
 
 const enc = encodeURIComponent;
@@ -145,6 +146,11 @@ export const STORES: StoreAdapter[] = [
   }),
 
   // --- Otras tiendas -------------------------------------------------------
+  // La unica con API propia: JSON publico, sin auth ni WAF, sin navegador.
+  // Catalogo de informatica, asi que aporta en busquedas de tecnologia y no
+  // en las de hogar.
+  createPcFactoryAdapter(),
+
   // 403 en ambos dominios con las tres estrategias HTTP: bloqueo por huella
   // del cliente, que es justo lo que resuelve un navegador real.
   createBrowserAdapter({

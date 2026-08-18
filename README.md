@@ -5,7 +5,7 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 
 - **Búsquedas**: se administran desde el panel; arranca con `bodegas de jardín` y
   `cajas organizadoras`.
-- **Tiendas activas**: Falabella, Sodimac e IKEA (ver [estado de cada tienda](#estado-verificado-de-cada-tienda)).
+- **Tiendas activas**: Falabella, Sodimac, IKEA y PC Factory (ver [estado de cada tienda](#estado-verificado-de-cada-tienda)).
 - **Acceso**: solo `javier.neo@gmail.com`, con Google Sign-In.
 - **Actualización**: dos veces al día vía GitHub Actions (gratis, sin plan Blaze).
 
@@ -15,7 +15,7 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 GitHub Actions (cron 2×/día)
         │
         ▼
-   packages/scraper ──consulta──► Falabella · Sodimac · IKEA
+   packages/scraper ──consulta──► Falabella · Sodimac · IKEA · PC Factory
         │
         │ normaliza, filtra ruido, calcula variación y descuento
         ▼
@@ -79,7 +79,7 @@ firestore.rules           Quién lee, y lo único que el panel puede escribir.
 | `npm run diagnose` | Prueba URLs candidatas por tienda y describe qué devuelven |
 | `npm run seed` | Carga productos de ejemplo en Firestore |
 | `npm run purge -- --store=ikea` | Borra los productos de una tienda y su historial |
-| `npm test` | Tests de la lógica pura (74 casos) |
+| `npm test` | Tests de la lógica pura (84 casos) |
 | `npm run typecheck` | TypeScript en ambos paquetes |
 | `npm run build` | Compila el panel a `packages/web/dist` |
 
@@ -188,6 +188,7 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 | **Falabella** | HTTP · datos estructurados | ✅ |
 | **Sodimac** | HTTP · datos estructurados (enlace armado del `productId`) | ✅ |
 | **IKEA** | Navegador · tarjetas del DOM, vía `ikea.com/cl/es` | ✅ |
+| **PC Factory** | HTTP · API REST propia (`api.pcfactory.cl`) | ✅ |
 | Paris, Easy, Ripley, Líder | — | ⛔ ni con navegador |
 | Construmart, Imperial | — | ⛔ sin datos reconocibles |
 | Mercado Libre | — | ⛔ API con token e interstitial anti-bot |
@@ -195,12 +196,27 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 Las desactivadas siguen declaradas con su motivo anotado, listas para reintentar
 cambiando `enabled` en `packages/scraper/src/config/stores.ts`.
 
+#### Qué precio se guarda
+
+Varias tiendas publican más de un precio para el mismo producto. Se guarda **el que
+paga cualquiera**, no el más bajo:
+
+| Tienda | Se guarda | Se ignora |
+| --- | --- | --- |
+| Falabella, Sodimac | precio normal | precio CMR |
+| PC Factory | `precio.normal` | `efectivo`, `debito`, `bancoEstado` |
+
+El `listPrice` tachado sale de `referencia`, que es justo el número que se infla
+antes de un Cyber: con el historial de `history` se ve cuándo subió la referencia sin
+que bajara el precio real.
+
 ### Las tres formas de leer una tienda
 
 El scraper las intenta en orden de coste, y se queda con la primera que dé
 resultados:
 
-1. **Catálogo público** (VTEX y similares) — un JSON limpio, lo más barato.
+1. **Catálogo público** (VTEX, o la API propia de PC Factory) — un JSON limpio,
+   lo más barato.
 2. **Datos estructurados del HTML** — JSON-LD o el estado embebido de la SPA
    (`__NEXT_DATA__`). Es lo que usan Falabella y Sodimac, y aguanta rediseños
    mucho mejor que unos selectores CSS.
