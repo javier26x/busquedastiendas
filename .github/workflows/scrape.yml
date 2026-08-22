@@ -28,7 +28,10 @@ concurrency:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Con 16 tiendas, las que van por navegador y las que sondean seis
+    # estrategias antes de rendirse, una corrida ronda los 15 minutos. El
+    # margen es para que un dia lento no la corte a mitad de escritura.
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4

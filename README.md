@@ -49,6 +49,20 @@ npm run scrape -- --dry-run
 npm run scrape
 ```
 
+### Desplegar
+
+```bash
+bash scripts/deploy.sh
+```
+
+Verifica (typecheck, tests, pipeline con fixtures), construye el panel, comprueba
+que el bundle lleve una clave válida y recién ahí sube **reglas, índices y panel**,
+en ese orden: si el panel subiera antes que las reglas, quedaría pidiendo permisos
+que todavía no existen.
+
+El cron del scraper corre siempre sobre la rama por defecto, así que para que
+también se actualice hay que fusionar antes. El script avisa si estás en otra rama.
+
 ## Estructura
 
 ```
@@ -71,6 +85,8 @@ firestore.rules           Quién lee, y lo único que el panel puede escribir.
 
 | Comando | Qué hace |
 | --- | --- |
+| `bash scripts/deploy.sh` | Despliegue completo: verifica, sube reglas, índices y panel |
+| `bash scripts/deploy.sh --dry` | Igual pero sin desplegar: solo comprueba |
 | `npm run dev` | Panel web en `http://localhost:5173` |
 | `npm run scrape` | Corrida real: consulta tiendas y escribe en Firestore |
 | `npm run scrape -- --dry-run` | Consulta y muestra por pantalla, sin escribir |
