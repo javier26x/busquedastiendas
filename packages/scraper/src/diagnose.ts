@@ -9,8 +9,12 @@
  *   npm run diagnose
  *   npm run diagnose -- --query="caja organizadora"
  *   npm run diagnose -- --store=easy
+ *   npm run diagnose -- --probe=www.tienda.cl   (que tecnica sirve para esa tienda)
  */
 import * as cheerio from 'cheerio';
+import type { AdapterContext, StoreAdapter } from './types.js';
+import { createVtexAdapter, createVtexIntelligentSearchAdapter } from './adapters/vtex.js';
+import { createShopifyAdapter, createWooCommerceAdapter } from './adapters/platform.js';
 
 interface Probe {
   store: string;
@@ -87,19 +91,95 @@ const PROBES: Probe[] = [
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
-function parseArgs(argv: string[]): { query: string; store: string | null; dump: string | null } {
+interface Args {
+  query: string;
+  store: string | null;
+  dump: string | null;
+  /** Host a sondear con todas las tecnicas conocidas. */
+  probe: string | null;
+}
+
+function parseArgs(argv: string[]): Args {
   let query = 'caja organizadora';
   let store: string | null = null;
   let dump: string | null = null;
+  let probe: string | null = null;
 
   for (const arg of argv) {
     if (arg.startsWith('--query=')) query = arg.slice('--query='.length);
     else if (arg.startsWith('--store=')) store = arg.slice('--store='.length);
     // Vuelca el HTML de un selector concreto, para afinar un adaptador.
     else if (arg.startsWith('--dump=')) dump = arg.slice('--dump='.length);
+    else if (arg.startsWith('--probe=')) probe = arg.slice('--probe='.length);
   }
 
-  return { query, store, dump };
+  return { query, store, dump, probe };
+}
+
+/**
+ * Sondea un host con todas las tecnicas conocidas y dice cual funciona.
+ *
+ * Es el paso previo a agregar una tienda: en vez de suponer sobre que corre,
+ * se prueba y el resultado indica que adaptador declarar en `config/stores.ts`.
+ */
+async function probeTechniques(host: string, query: string): Promise<void> {
+  const clean = host.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+
+  const techniques: { name: string; recipe: string; adapter: StoreAdapter }[] = [
+    {
+      name: 'VTEX (catalogo clasico)',
+      recipe: `createVtexAdapter({ id, label, host: '${clean}' })`,
+      adapter: createVtexAdapter({ id: 'probe', label: clean, host: clean }),
+    },
+    {
+      name: 'VTEX Intelligent Search',
+      recipe: `createVtexIntelligentSearchAdapter({ id, label, host: '${clean}' })`,
+      adapter: createVtexIntelligentSearchAdapter({ id: 'probe', label: clean, host: clean }),
+    },
+    {
+      name: 'Shopify',
+      recipe: `createShopifyAdapter({ id, label, host: '${clean}' })`,
+      adapter: createShopifyAdapter({ id: 'probe', label: clean, host: clean }),
+    },
+    {
+      name: 'WooCommerce Store API',
+      recipe: `createWooCommerceAdapter({ id, label, host: '${clean}' })`,
+      adapter: createWooCommerceAdapter({ id: 'probe', label: clean, host: clean }),
+    },
+  ];
+
+  console.log(`\n=== ${clean} · sondeo de tecnicas con "${query}" ===\n`);
+
+  const ctx: AdapterContext = { limit: 5, log: () => undefined };
+  let winner: (typeof techniques)[number] | null = null;
+
+  for (const technique of techniques) {
+    try {
+      const offers = await technique.adapter.search(query, ctx);
+      if (offers.length > 0) {
+        console.log(`  ✅ ${technique.name}: ${offers.length} productos`);
+        console.log(`     ej: "${offers[0]?.title}" $${offers[0]?.price}`);
+        winner ??= technique;
+      } else {
+        console.log(`  ·  ${technique.name}: responde, sin productos`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`  ✗  ${technique.name}: ${message.slice(0, 110)}`);
+    }
+  }
+
+  if (winner) {
+    console.log(`\n  Agregala a config/stores.ts con:\n    ${winner.recipe}`);
+    return;
+  }
+
+  console.log(
+    '\n  Ninguna API publica respondio. Quedan las tecnicas sobre HTML:\n' +
+      `    createUnknownPlatformStore({ id, label, host: '${clean}' })   (prueba todo lo anterior mas HTML y DOM)\n` +
+      `    createBrowserAdapter({ id, label, base: 'https://${clean}', buildUrls })   (navegador; captura tambien el XHR)\n` +
+      `  Para ver que devuelve el HTML: npm run diagnose -- --store=<id>`,
+  );
 }
 
 /** Selector cuyo HTML se quiere ver; lo fija `--dump=`. */
@@ -377,8 +457,14 @@ async function probe(entry: Probe, query: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const { query, store, dump } = parseArgs(process.argv.slice(2));
+  const { query, store, dump, probe: probeHost } = parseArgs(process.argv.slice(2));
   dumpSelector = dump;
+
+  if (probeHost) {
+    await probeTechniques(probeHost, query);
+    return;
+  }
+
   const selected = store ? PROBES.filter((entry) => entry.store === store) : PROBES;
 
   if (selected.length === 0) {

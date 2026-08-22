@@ -79,7 +79,8 @@ firestore.rules           Quién lee, y lo único que el panel puede escribir.
 | `npm run diagnose` | Prueba URLs candidatas por tienda y describe qué devuelven |
 | `npm run seed` | Carga productos de ejemplo en Firestore |
 | `npm run purge -- --store=ikea` | Borra los productos de una tienda y su historial |
-| `npm test` | Tests de la lógica pura (84 casos) |
+| `npm run diagnose -- --probe=www.tienda.cl` | Prueba las 4 APIs públicas y dice cuál sirve |
+| `npm test` | Tests de la lógica pura (93 casos) |
 | `npm run typecheck` | TypeScript en ambos paquetes |
 | `npm run build` | Compila el panel a `packages/web/dist` |
 
@@ -111,23 +112,22 @@ precios congelados sin aviso.
 
 ## Agregar una tienda
 
-En `packages/scraper/src/config/stores.ts`:
+Primero, averigua sobre qué corre:
 
-```ts
-// Tienda sobre VTEX (catálogo público y estable):
-createVtexAdapter({ id: 'lider', label: 'Líder', host: 'www.lider.cl' }),
-
-// Tienda que renderiza los datos en el HTML:
-createHtmlSearchAdapter({
-  id: 'ripley',
-  label: 'Ripley',
-  base: 'https://simple.ripley.cl',
-  buildUrl: (q) => `https://simple.ripley.cl/search/${encodeURIComponent(q)}`,
-}),
+```bash
+npm run diagnose -- --probe=www.tienda.cl
 ```
 
-Después: `npm run scrape -- --stores=lider --dry-run` para verificar antes de
-dejarla en el cron.
+Si alguna API pública responde, imprime la línea para pegar en
+`packages/scraper/src/config/stores.ts`. Si ninguna responde, basta el host y la
+cadena prueba las [seis técnicas](#las-seis-formas-de-leer-una-tienda) sola:
+
+```ts
+createUnknownPlatformStore({ id: 'tienda', label: 'Tienda', host: 'www.tienda.cl' }),
+```
+
+Después: `npm run scrape -- --stores=tienda --dry-run` para ver qué técnica
+funcionó antes de dejarla en el cron.
 
 ## Agregar una búsqueda
 
@@ -189,12 +189,24 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 | **Sodimac** | HTTP · datos estructurados (enlace armado del `productId`) | ✅ |
 | **IKEA** | Navegador · tarjetas del DOM, vía `ikea.com/cl/es` | ✅ |
 | **PC Factory** | HTTP · API REST propia (`api.pcfactory.cl`) | ✅ |
-| Paris, Easy, Ripley, Líder | — | ⛔ ni con navegador |
-| Construmart, Imperial | — | ⛔ sin datos reconocibles |
+| Paris, Easy, Ripley, Líder | Navegador · captura del XHR | 🔄 reactivadas |
+| Construmart, Imperial | Sondeo de las 6 técnicas | 🔄 reactivadas |
+| Hites, La Polar, ABCDIN, Corona, SP Digital, Winpy | Sondeo de las 6 técnicas | 🆕 sin verificar |
 | Mercado Libre | — | ⛔ API con token e interstitial anti-bot |
 
-Las desactivadas siguen declaradas con su motivo anotado, listas para reintentar
-cambiando `enabled` en `packages/scraper/src/config/stores.ts`.
+Las marcadas 🔄 fallaban con las técnicas anteriores y se reactivaron porque
+ahora hay una que ataca su causa: cargan por XHR y ese JSON ya se captura. Las 🆕
+están declaradas solo por su host, a la espera de la primera corrida.
+
+Para ver cuáles respondieron y con qué técnica:
+
+```bash
+npm run scrape -- --dry-run
+```
+
+Cada tienda que falle queda con su motivo en el resumen de la corrida y en el
+panel. Apagar una es poner `enabled: false` en su bloque de
+`packages/scraper/src/config/stores.ts`.
 
 #### Qué precio se guarda
 
@@ -205,25 +217,64 @@ paga cualquiera**, no el más bajo:
 | --- | --- | --- |
 | Falabella, Sodimac | precio normal | precio CMR |
 | PC Factory | `precio.normal` | `efectivo`, `debito`, `bancoEstado` |
+| Cualquiera leída por JSON | el campo sin condiciones | lo que mencione tarjeta, banco, efectivo, débito o cuotas |
 
 El `listPrice` tachado sale de `referencia`, que es justo el número que se infla
 antes de un Cyber: con el historial de `history` se ve cuándo subió la referencia sin
 que bajara el precio real.
 
-### Las tres formas de leer una tienda
+### Las seis formas de leer una tienda
 
-El scraper las intenta en orden de coste, y se queda con la primera que dé
-resultados:
+El scraper las intenta en orden de coste y se queda con la primera que dé
+resultados. La que funcionó queda recordada, así que el sondeo se paga una vez
+y no en cada consulta:
 
-1. **Catálogo público** (VTEX, o la API propia de PC Factory) — un JSON limpio,
-   lo más barato.
-2. **Datos estructurados del HTML** — JSON-LD o el estado embebido de la SPA
-   (`__NEXT_DATA__`). Es lo que usan Falabella y Sodimac, y aguanta rediseños
-   mucho mejor que unos selectores CSS.
-3. **Navegador headless** — Chromium real vía Playwright. Cuesta segundos por
-   consulta, así que es el último recurso, pero resuelve los dos casos que un
-   cliente HTTP no puede: las tiendas que responden 403 por la huella TLS del
-   cliente, y las que cargan sus productos por XHR dejando el HTML inicial vacío.
+| # | Técnica | Cuándo aplica |
+| --- | --- | --- |
+| 1 | **VTEX, catálogo clásico** | `/api/catalog_system/pub/products/search` |
+| 2 | **VTEX Intelligent Search** | tiendas VTEX que ya migraron y dejaron el clásico vacío |
+| 3 | **Shopify** | `/search/suggest.json`, la búsqueda predictiva del propio sitio |
+| 4 | **WooCommerce Store API** | `/wp-json/wc/store/v1/products`, la API del carrito |
+| 5 | **Datos estructurados del HTML** | JSON-LD o el estado embebido (`__NEXT_DATA__`) |
+| 6 | **Navegador headless** | 403 por huella TLS, o productos que llegan por XHR |
+
+Las cuatro primeras devuelven un JSON limpio con una sola petición: no hay HTML
+que interpretar ni nada que se rompa cuando la tienda rediseña. Las plataformas
+las traen de fábrica y muchas tiendas no saben que están abiertas.
+
+Como el envoltorio y los nombres de campo cambian de una a otra,
+`lib/json-catalog.ts` no asume ninguna ruta: recorre la respuesta buscando
+objetos con nombre y precio, y prueba los nombres plausibles de cada dato. Por
+eso una tienda nueva suele necesitar solo su host.
+
+#### Capturar el XHR
+
+Dentro del navegador hay tres lecturas, de mejor a peor: datos estructurados,
+**el JSON que la propia página pide por detrás**, y raspar las tarjetas del DOM.
+
+La del medio es la que rescata a las tiendas cuyo HTML no dice nada. Cargan los
+productos desde su propia API y esa respuesta es un JSON limpio, mucho mejor que
+el maquetado. Cuando funciona, el log anota la dirección:
+
+```
+[paris] Paris: 24 desde el XHR de la tienda (navegador) {"api":"https://.../api/search?q=..."}
+```
+
+Esa dirección es el primer paso para dejar de necesitar navegador: se declara con
+`createJsonApiAdapter` y la tienda pasa a costar una petición. Es exactamente
+como se encontró la API de PC Factory.
+
+Con `CHROMIUM_PATH` se puede apuntar a un Chromium ya instalado.
+
+### Agregar una tienda nueva
+
+```bash
+npm run diagnose -- --probe=www.tienda.cl
+```
+
+Prueba las cuatro APIs públicas y, si alguna responde, imprime la línea exacta
+para pegar en `config/stores.ts`. Si ninguna responde, `createUnknownPlatformStore`
+sondea las seis técnicas con solo declarar el host.
 
 Con `CHROMIUM_PATH` se puede apuntar a un Chromium ya instalado, útil en
 imágenes de CI que lo traen incluido.

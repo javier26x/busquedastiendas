@@ -1,11 +1,12 @@
 import type { StoreAdapter } from '../types.js';
 import { mercadoLibreAdapter } from '../adapters/mercadolibre.js';
-import { createVtexAdapter } from '../adapters/vtex.js';
+import { createVtexAdapter, createVtexIntelligentSearchAdapter } from '../adapters/vtex.js';
 import { createHtmlSearchAdapter } from '../adapters/html-search.js';
 import { createFallbackAdapter } from '../adapters/fallback.js';
 import { createDomCardsAdapter } from '../adapters/dom-cards.js';
 import { createBrowserAdapter } from '../adapters/browser.js';
 import { createPcFactoryAdapter } from '../adapters/pcfactory.js';
+import { createShopifyAdapter, createWooCommerceAdapter } from '../adapters/platform.js';
 import { fixtureAdapter } from '../adapters/fixture.js';
 
 const enc = encodeURIComponent;
@@ -13,9 +14,11 @@ const enc = encodeURIComponent;
 /**
  * Tienda de la que no se sabe con certeza sobre que plataforma corre.
  *
- * Prueba el catalogo publico de VTEX y, si no aplica, la busqueda HTML con
- * varias rutas candidatas (incluida la de VTEX `?map=ft`). Asi una
- * suposicion equivocada sobre la plataforma no deja la tienda fuera.
+ * Prueba las tecnicas en orden de coste, de un JSON publico a raspar el DOM,
+ * y recuerda la que funciono. Asi una suposicion equivocada sobre la
+ * plataforma no deja la tienda fuera, y basta declarar el host para empezar.
+ *
+ * Para saber de antemano cual aplica: `npm run diagnose -- --probe=host`.
  */
 /** Contenedores de tarjeta habituales, para el ultimo recurso por DOM. */
 const GENERIC_CARD_SELECTORS = [
@@ -45,21 +48,26 @@ function createUnknownPlatformStore(config: {
     `${base}/catalogsearch/result/?q=${enc(q)}`, // Magento
   ];
 
+  const platform = { label: config.label, host: config.host };
+
   return createFallbackAdapter({
     id: config.id,
     label: config.label,
     enabled: config.enabled ?? true,
     strategies: [
-      createVtexAdapter({ id: `${config.id}-vtex`, label: config.label, host: config.host }),
+      // 1. Catalogos JSON publicos: una peticion, sin HTML que interpretar.
+      createVtexAdapter({ ...platform, id: `${config.id}-vtex` }),
+      createVtexIntelligentSearchAdapter({ ...platform, id: `${config.id}-vtex-is` }),
+      createShopifyAdapter({ ...platform, id: `${config.id}-shopify` }),
+      createWooCommerceAdapter({ ...platform, id: `${config.id}-woo` }),
+      // 2. Datos estructurados dentro del HTML.
       createHtmlSearchAdapter({
         id: `${config.id}-html`,
         label: config.label,
         base,
         buildUrls,
       }),
-      // Ultimo recurso: los productos estan en el DOM y no en un JSON, como
-      // le pasa a Paris. Vale la pena intentarlo antes de dar la tienda por
-      // perdida.
+      // 3. Ultimo recurso sin navegador: raspar las tarjetas del DOM.
       createDomCardsAdapter({
         id: `${config.id}-dom`,
         label: config.label,
@@ -122,27 +130,30 @@ export const STORES: StoreAdapter[] = [
   }),
 
   // --- Grupo Cencosud ------------------------------------------------------
-  // 403 a cualquier cliente HTTP; con navegador real puede pasar.
+  // 403 a cualquier cliente HTTP. Con navegador la pagina carga, pero ni sus
+  // datos estructurados ni sus tarjetas eran reconocibles: la esperanza ahora
+  // es el JSON que pide por detras.
   createBrowserAdapter({
     id: 'easy',
     label: 'Easy',
-    enabled: false,
     base: 'https://www.easy.cl',
     buildUrls: (q) => [
       `https://www.easy.cl/search?q=${enc(q)}`,
       `https://www.easy.cl/${enc(q)}?map=ft`,
     ],
+    settleMs: 2500,
   }),
   // Paris carga los productos por XHR: el HTML inicial trae las tarjetas
-  // vacias, con 213 "skeleton". Necesita navegador.
+  // vacias, con 213 "skeleton". Es el caso exacto que resuelve capturar el
+  // XHR en vez de mirar el DOM.
   createBrowserAdapter({
     id: 'paris',
     label: 'Paris',
-    enabled: false,
     base: 'https://www.paris.cl',
     buildUrls: (q) => [`https://www.paris.cl/search/?q=${enc(q)}`],
     cardSelectors: ['[data-testid^="paris-vertical-pod"]', '[data-testid*="pod"]'],
     waitForSelector: '[data-testid="paris-pod-price"]',
+    settleMs: 2500,
   }),
 
   // --- Otras tiendas -------------------------------------------------------
@@ -156,36 +167,45 @@ export const STORES: StoreAdapter[] = [
   createBrowserAdapter({
     id: 'ripley',
     label: 'Ripley',
-    enabled: false,
     base: 'https://simple.ripley.cl',
     buildUrls: (q) => [
       `https://simple.ripley.cl/search/${enc(q)}`,
       `https://www.ripley.cl/search/${enc(q)}`,
     ],
+    settleMs: 2500,
   }),
   // Servia una pagina anti-bot al cliente HTTP.
   createBrowserAdapter({
     id: 'lider',
     label: 'Lider',
-    enabled: false,
     base: 'https://www.lider.cl',
     buildUrls: (q) => [`https://www.lider.cl/search?query=${enc(q)}`],
     settleMs: 2500,
   }),
-  // Sin datos estructurados ni selectores reconocibles: carga por XHR.
+  // Cargan por XHR y no se les reconocio nada en el HTML. Ahora la cadena
+  // prueba antes cuatro catalogos JSON publicos, que es lo que les faltaba.
   createUnknownPlatformStore({
     id: 'construmart',
     label: 'Construmart',
     host: 'www.construmart.cl',
-    enabled: false,
   }),
-  // Sin datos estructurados ni selectores reconocibles: carga por XHR.
   createUnknownPlatformStore({
     id: 'imperial',
     label: 'Imperial',
     host: 'www.imperial.cl',
-    enabled: false,
   }),
+
+  // --- Candidatas sin verificar --------------------------------------------
+  // Declaradas por su host y nada mas: la cadena de `createUnknownPlatformStore`
+  // sondea las seis tecnicas y el log de la primera corrida dice cual sirvio.
+  // Si alguna queda en rojo, apagarla es poner `enabled: false` en su bloque.
+  createUnknownPlatformStore({ id: 'hites', label: 'Hites', host: 'www.hites.com' }),
+  createUnknownPlatformStore({ id: 'lapolar', label: 'La Polar', host: 'www.lapolar.cl' }),
+  createUnknownPlatformStore({ id: 'abcdin', label: 'ABCDIN', host: 'www.abcdin.cl' }),
+  createUnknownPlatformStore({ id: 'corona', label: 'Corona', host: 'www.corona.cl' }),
+  // Informatica, para acompanar a PC Factory.
+  createUnknownPlatformStore({ id: 'spdigital', label: 'SP Digital', host: 'www.spdigital.cl' }),
+  createUnknownPlatformStore({ id: 'winpy', label: 'Winpy', host: 'www.winpy.cl' }),
 
   fixtureAdapter,
 ];

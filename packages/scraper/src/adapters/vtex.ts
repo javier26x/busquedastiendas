@@ -44,6 +44,42 @@ interface VtexSeller {
   };
 }
 
+/**
+ * VTEX Intelligent Search.
+ *
+ * Es el buscador nuevo de VTEX. Varias tiendas ya migraron y dejaron el
+ * catalogo clasico devolviendo vacio, asi que conviene tener las dos vias: el
+ * producto viene con la misma forma, cambia solo la ruta y el envoltorio.
+ */
+export function createVtexIntelligentSearchAdapter(config: VtexStoreConfig): StoreAdapter {
+  const base = `https://${config.host}`;
+
+  return {
+    id: config.id,
+    label: config.label,
+    enabled: config.enabled ?? true,
+
+    async search(query: string, ctx: AdapterContext): Promise<RawOffer[]> {
+      const count = Math.max(1, Math.min(ctx.limit, 50));
+      const url =
+        `${base}/api/io/_v/api/intelligent-search/product_search` +
+        `?query=${encodeURIComponent(query)}&count=${count}&page=1`;
+
+      const payload = await fetchJson<{ products?: VtexProduct[] }>(url, {
+        headers: { Referer: `${base}/` },
+      });
+
+      const products = payload?.products;
+      if (!Array.isArray(products)) {
+        ctx.log(`${config.label}: respuesta inesperada de intelligent-search`, { query });
+        return [];
+      }
+
+      return products.flatMap((product) => toOffer(product, base));
+    },
+  };
+}
+
 export function createVtexAdapter(config: VtexStoreConfig): StoreAdapter {
   const base = `https://${config.host}`;
 

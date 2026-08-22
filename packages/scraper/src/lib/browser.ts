@@ -1,4 +1,4 @@
-import { chromium, type Browser, type BrowserContext } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Response } from 'playwright';
 
 /**
  * Navegador headless compartido para las tiendas que un cliente HTTP no puede
@@ -28,7 +28,32 @@ export interface RenderOptions {
   /** Milisegundos de gracia tras la carga, para el contenido que llega por XHR. */
   settleMs?: number;
   timeoutMs?: number;
+  /** Ademas del HTML, guarda las respuestas JSON que pidio la pagina. */
+  captureJson?: boolean;
 }
+
+/** Una respuesta JSON que la pagina pidio mientras cargaba. */
+export interface CapturedJson {
+  url: string;
+  body: unknown;
+}
+
+export interface RenderResult {
+  html: string;
+  /** Vacio salvo que se pida `captureJson`. */
+  json: CapturedJson[];
+}
+
+/**
+ * Tope de respuestas guardadas por pagina.
+ *
+ * Una tienda pide decenas de JSON (analitica, banners, recomendados). Con
+ * este tope el de los productos entra igual y no se acumula basura.
+ */
+const MAX_CAPTURED = 60;
+
+/** Respuestas mas grandes que esto casi nunca son el listado de resultados. */
+const MAX_CAPTURED_BYTES = 4_000_000;
 
 async function getBrowser(): Promise<Browser> {
   if (browser) return browser;
@@ -60,6 +85,19 @@ export async function closeBrowser(): Promise<void> {
 
 /** Devuelve el HTML de una pagina ya renderizada, con su JavaScript ejecutado. */
 export async function renderHtml(url: string, options: RenderOptions = {}): Promise<string> {
+  const { html } = await renderPage(url, options);
+  return html;
+}
+
+/**
+ * Renderiza una pagina y, si se pide, guarda las respuestas JSON que pidio.
+ *
+ * Capturar el XHR es lo que resuelve las tiendas cuyo HTML no dice nada:
+ * cargan los productos por detras desde su propia API, y esa respuesta es un
+ * JSON limpio, mucho mejor que raspar las tarjetas del DOM. Ademas revela la
+ * direccion de esa API, que despues puede consultarse sin navegador.
+ */
+export async function renderPage(url: string, options: RenderOptions = {}): Promise<RenderResult> {
   const instance = await getBrowser();
   const context: BrowserContext = await instance.newContext({
     userAgent: USER_AGENT,
@@ -76,6 +114,21 @@ export async function renderHtml(url: string, options: RenderOptions = {}): Prom
       if (BLOCKED_RESOURCES.has(route.request().resourceType())) return route.abort();
       return route.continue();
     });
+
+    // Se acumulan las promesas y se resuelven antes de cerrar el contexto:
+    // leer el cuerpo despues seria tarde y Playwright lanzaria.
+    const pending: Promise<CapturedJson | null>[] = [];
+
+    if (options.captureJson) {
+      page.on('response', (response) => {
+        if (pending.length >= MAX_CAPTURED) return;
+        if (response.status() !== 200) return;
+        if (!/json/i.test(response.headers()['content-type'] ?? '')) return;
+        if (response.url() === url) return;
+
+        pending.push(readJson(response));
+      });
+    }
 
     await page.goto(url, {
       waitUntil: 'domcontentloaded',
@@ -94,8 +147,26 @@ export async function renderHtml(url: string, options: RenderOptions = {}): Prom
       await page.waitForTimeout(options.settleMs);
     }
 
-    return await page.content();
+    const html = await page.content();
+    const settled = await Promise.all(pending);
+
+    return { html, json: settled.filter((entry): entry is CapturedJson => entry !== null) };
   } finally {
     await context.close();
+  }
+}
+
+/** Lee el cuerpo de una respuesta sin dejar que un fallo tumbe la corrida. */
+async function readJson(response: Response): Promise<CapturedJson | null> {
+  try {
+    const length = Number(response.headers()['content-length'] ?? '0');
+    if (length > MAX_CAPTURED_BYTES) return null;
+
+    const body: unknown = await response.json();
+    return { url: response.url(), body };
+  } catch {
+    // Respuesta abortada, redirigida o con cuerpo ya descartado: no es un
+    // error de la corrida, simplemente no hay nada que capturar.
+    return null;
   }
 }
