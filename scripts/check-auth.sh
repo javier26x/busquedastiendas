@@ -17,8 +17,12 @@ ENV_FILE="$(dirname "$0")/../packages/web/.env.local"
 
 say() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
 ok()  { printf '    \033[32m✓\033[0m %s\n' "$1"; }
-bad() { printf '    \033[31m✗\033[0m %s\n' "$1"; }
+# Ademas de imprimir, deja constancia: quien llama a este script (deploy.sh)
+# necesita el codigo de salida para saber si el diagnostico encontro algo.
+bad() { printf '    \033[31m✗\033[0m %s\n' "$1"; FAILED=1; }
 info(){ printf '    %s\n' "$1"; }
+
+FAILED=0
 
 mask() {
   local v="$1"
@@ -191,3 +195,4 @@ if command -v gcloud >/dev/null 2>&1; then
 fi
 
 printf '\n'
+exit "${FAILED}"

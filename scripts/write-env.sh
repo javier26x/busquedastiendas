@@ -18,6 +18,13 @@ fi
 # Se ejecuta desde la raiz del repositorio para que la ruta de salida calce.
 cd "$(dirname "$0")/.."
 
+# Si no se pasa ALLOWED_EMAILS, se conserva la lista que ya este en el
+# .env.local actual: regenerar la configuracion no debe recortar en silencio
+# quien puede entrar al panel.
+if [ -z "${ALLOWED_EMAILS:-}" ] && [ -f packages/web/.env.local ]; then
+  ALLOWED_EMAILS="$(grep -E '^VITE_ALLOWED_EMAILS=' packages/web/.env.local | head -1 | cut -d= -f2-)"
+fi
+
 GOOGLE_ACCESS_TOKEN="$(gcloud auth print-access-token)" \
 FIREBASE_PROJECT_ID="${PROJECT_ID}" \
 ALLOWED_EMAILS="${ALLOWED_EMAILS:-javier.neo@gmail.com}" \
