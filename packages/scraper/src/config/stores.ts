@@ -45,6 +45,11 @@ function createUnknownPlatformStore(config: {
     // Rutas genericas de las plataformas mas usadas en retail chileno.
     `${base}/${enc(q)}?map=ft`, // VTEX
     `${base}/search?q=${enc(q)}`,
+    // Varias tiendas chilenas ruteen en español y devuelven 404 en /search.
+    // Fue el motivo de que Jumbo, Santa Isabel y Unimarc parecieran caidas.
+    `${base}/busqueda?q=${enc(q)}`,
+    `${base}/buscar?q=${enc(q)}`,
+    `${base}/search?query=${enc(q)}`,
     `${base}/catalogsearch/result/?q=${enc(q)}`, // Magento
   ];
 
