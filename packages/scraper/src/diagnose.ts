@@ -12,6 +12,7 @@
  *   npm run diagnose -- --probe=www.tienda.cl   (que tecnica sirve para esa tienda)
  *   npm run diagnose -- --capture='https://www.lider.cl/search?query=panales'
  *                                               (vuelca el JSON que pide por XHR)
+ *   npm run diagnose -- --blocked   (compara los bloqueos contra los de CI)
  */
 import * as cheerio from 'cheerio';
 import type { AdapterContext, StoreAdapter } from './types.js';
@@ -101,6 +102,104 @@ interface Args {
   probe: string | null;
   /** URL a renderizar en el navegador para volcar el JSON que pide por XHR. */
   capture: string | null;
+  /** Repite desde aqui los bloqueos que se vieron en GitHub Actions. */
+  blocked: boolean;
+}
+
+/**
+ * Lo que devolvio cada tienda bloqueada en la corrida de GitHub Actions.
+ *
+ * Sirve de linea base: si desde otra maquina cambia el resultado, el problema
+ * era la reputacion de la IP del runner y mover el scraper resuelve; si da
+ * igual, el bloqueo no es por IP y hay que atacarlo de otra forma.
+ */
+const BLOCKED: { id: string; label: string; enActions: string; url: string }[] = [
+  { id: 'spdigital', label: 'SP Digital', enActions: 'HTTP 403', url: 'https://www.spdigital.cl/search?q=notebook' },
+  { id: 'winpy', label: 'Winpy', enActions: 'HTTP 403', url: 'https://www.winpy.cl/search?q=notebook' },
+  { id: 'corona', label: 'Corona', enActions: 'fetch failed', url: 'https://www.corona.cl/search?q=toalla' },
+  { id: 'lapolar', label: 'La Polar', enActions: 'HTML en vez de JSON', url: 'https://www.lapolar.cl/search?q=panales' },
+  { id: 'abcdin', label: 'ABCDIN', enActions: 'HTML en vez de JSON', url: 'https://www.abcdin.cl/search?q=notebook' },
+  { id: 'imperial', label: 'Imperial', enActions: 'HTTP 404 / sin datos', url: 'https://www.imperial.cl/search?q=madera' },
+  { id: 'construmart', label: 'Construmart', enActions: 'HTTP 404', url: 'https://www.construmart.cl/catalogsearch/result/?q=cemento' },
+  // Estas cargaron bien (200) y el navegador las renderizo: su problema NO es
+  // de IP. Se incluyen para dejarlo demostrado en la misma tabla.
+  { id: 'lider', label: 'Lider', enActions: '200, sin productos reconocidos', url: 'https://www.lider.cl/search?query=panales' },
+  { id: 'paris', label: 'Paris', enActions: '200, sin productos reconocidos', url: 'https://www.paris.cl/search/?q=panales' },
+  { id: 'ripley', label: 'Ripley', enActions: '200, sin productos reconocidos', url: 'https://simple.ripley.cl/search/panales' },
+  { id: 'easy', label: 'Easy', enActions: '200, sin productos reconocidos', url: 'https://www.easy.cl/search?q=parrilla' },
+];
+
+/** Señales de que lo que volvio es un muro anti-bot y no la tienda. */
+const BLOCK_PAGE = /captcha|are you a robot|access denied|forbidden|incapsula|cloudflare|attention required/i;
+
+/**
+ * Repite los bloqueos desde esta maquina y los compara con los de CI.
+ *
+ * Es la prueba que decide si conviene mover el scraper a otro servidor: usa el
+ * mismo cliente y las mismas cabeceras que la corrida real, asi lo unico que
+ * cambia es desde donde sale la peticion.
+ */
+async function probeBlocked(): Promise<void> {
+  const { fetchHtml, HttpError } = await import('./lib/http.js');
+
+  console.log('\n=== Bloqueos vistos desde esta maquina ===\n');
+  console.log('Mismo cliente y mismas cabeceras que la corrida real: lo unico');
+  console.log('que cambia es la IP de origen.\n');
+
+  const mejoraron: string[] = [];
+  // Las que en CI respondieron 200: son el testigo. Si aqui tampoco responden,
+  // el problema es la red de esta maquina y no las tiendas.
+  const testigos: string[] = [];
+
+  for (const entry of BLOCKED) {
+    let aqui: string;
+    let respondio = false;
+    let cambio = false;
+
+    try {
+      const html = await fetchHtml(entry.url, { retries: 0, timeoutMs: 20_000 });
+      const bloqueo = BLOCK_PAGE.test(html.slice(0, 4000));
+      respondio = !bloqueo;
+      aqui = bloqueo
+        ? `200 pero es un muro anti-bot (${html.length} bytes)`
+        : `200 OK (${html.length} bytes)`;
+      // Solo cuenta como mejora si antes ni siquiera respondia.
+      cambio = respondio && !entry.enActions.startsWith('200');
+    } catch (error) {
+      aqui =
+        error instanceof HttpError
+          ? `HTTP ${error.status}`
+          : (error instanceof Error ? error.message : String(error)).slice(0, 60);
+    }
+
+    if (cambio) mejoraron.push(entry.id);
+    if (entry.enActions.startsWith('200') && !respondio) testigos.push(entry.label);
+
+    console.log(`${cambio ? '🟢' : '  '} ${entry.label.padEnd(13)} en Actions: ${entry.enActions.padEnd(32)} aqui: ${aqui}`);
+  }
+
+  console.log('');
+
+  // Antes de concluir nada: si las que si respondian en CI tampoco responden
+  // aqui, esta maquina no tiene salida directa a internet y la comparacion no
+  // vale. Sin esta comprobacion el diagnostico afirmaria lo contrario de lo
+  // que pasa, que es peor que no diagnosticar.
+  if (testigos.length > 0) {
+    console.log(`⚠ No se puede concluir: ${testigos.join(', ')} tambien fallan aqui,`);
+    console.log('  y en CI respondian 200. Esta maquina esta detras de un proxy o');
+    console.log('  cortafuegos que bloquea las tiendas. Corre esto donde tengas');
+    console.log('  salida directa a internet (tu VPS).');
+    return;
+  }
+
+  if (mejoraron.length > 0) {
+    console.log(`Estas SI responden desde aqui y no desde CI: ${mejoraron.join(', ')}`);
+    console.log('El bloqueo era por la IP del runner. Correr el scraper en este');
+    console.log('servidor las recupera; ver "Correr el scraper en un VPS" en el README.');
+  } else {
+    console.log('Ninguna cambio de resultado: el bloqueo no depende de la IP,');
+    console.log('asi que mover el scraper a otro servidor no las recuperaria.');
+  }
 }
 
 function parseArgs(argv: string[]): Args {
@@ -109,6 +208,7 @@ function parseArgs(argv: string[]): Args {
   let dump: string | null = null;
   let probe: string | null = null;
   let capture: string | null = null;
+  let blocked = false;
 
   for (const arg of argv) {
     if (arg.startsWith('--query=')) query = arg.slice('--query='.length);
@@ -117,9 +217,10 @@ function parseArgs(argv: string[]): Args {
     else if (arg.startsWith('--dump=')) dump = arg.slice('--dump='.length);
     else if (arg.startsWith('--probe=')) probe = arg.slice('--probe='.length);
     else if (arg.startsWith('--capture=')) capture = arg.slice('--capture='.length);
+    else if (arg === '--blocked') blocked = true;
   }
 
-  return { query, store, dump, probe, capture };
+  return { query, store, dump, probe, capture, blocked };
 }
 
 /**
@@ -516,8 +617,13 @@ async function probe(entry: Probe, query: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const { query, store, dump, probe: probeHost, capture } = parseArgs(process.argv.slice(2));
+  const { query, store, dump, probe: probeHost, capture, blocked } = parseArgs(process.argv.slice(2));
   dumpSelector = dump;
+
+  if (blocked) {
+    await probeBlocked();
+    return;
+  }
 
   if (capture) {
     await captureXhr(capture);

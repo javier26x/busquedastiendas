@@ -308,6 +308,29 @@ Reporta código HTTP, si hay JSON-LD o estado embebido, en qué rutas del JSON
 están los productos, y la anatomía de una tarjeta: cuántos enlaces tiene, qué
 elementos llevan precio y cuáles son los candidatos a título.
 
+### ¿El bloqueo es por la IP?
+
+Varias tiendas responden 403 en GitHub Actions. Las IP de los runners son
+conocidas y muchos WAF las rechazan por reputación, así que vale preguntarse si
+desde otra máquina responderían. Esto lo mide:
+
+```bash
+npm run diagnose -- --blocked
+```
+
+Repite los mismos pedidos con el mismo cliente y las mismas cabeceras que la
+corrida real —lo único que cambia es desde dónde salen— y compara contra lo que
+devolvió CI. Si alguna pasa de 403 a 200, ese bloqueo era de IP y correr el
+scraper en un VPS la recupera.
+
+Incluye como testigo las tiendas que en CI **sí** respondían 200. Si esas
+también fallan, la máquina no tiene salida directa a internet y el diagnóstico
+lo dice en vez de sacar una conclusión equivocada.
+
+Ojo con la distinción: un `403` es un bloqueo; un `200 sin productos
+reconocidos` no lo es —la página cargó— y ahí la IP da igual. Para esas, lo que
+sirve es capturar el XHR:
+
 Para las tiendas que cargan por XHR (Líder, Ripley), volcar lo que pide la
 página deja ver la forma del JSON y el nombre de sus campos:
 
