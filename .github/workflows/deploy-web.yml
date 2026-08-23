@@ -2,7 +2,9 @@ name: Desplegar web
 
 on:
   push:
-    branches: [main]
+    # La rama por defecto del repositorio. No es "main": este proyecto vive en
+    # la rama de trabajo, asi que el despliegue automatico escucha esa.
+    branches: [claude/monitor-precios-tiendas-j7ldxb]
     paths:
       - 'packages/web/**'
       - 'firebase.json'

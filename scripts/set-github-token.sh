@@ -39,11 +39,16 @@ if [ -z "${GITHUB_TOKEN}" ]; then
   exit 1
 fi
 
+# El boton dispara el workflow sobre esta rama. Por defecto, la que este
+# consultada ahora (que en este repo es la rama por defecto), no un "main"
+# fijo que podria no existir.
+GH_REF="${GH_REF:-$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)}"
+
 GOOGLE_ACCESS_TOKEN="$(gcloud auth print-access-token)" \
 FIREBASE_PROJECT_ID="${PROJECT_ID}" \
 GITHUB_TOKEN="${GITHUB_TOKEN}" \
 GH_OWNER="${GH_OWNER:-javier26x}" \
 GH_REPO="${GH_REPO:-busquedastiendas}" \
 GH_WORKFLOW="${GH_WORKFLOW:-scrape.yml}" \
-GH_REF="${GH_REF:-main}" \
+GH_REF="${GH_REF}" \
 node scripts/set-github-token.mjs
