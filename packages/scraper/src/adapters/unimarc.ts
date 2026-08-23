@@ -62,18 +62,21 @@ export function createUnimarcAdapter(config: { enabled?: boolean } = {}): StoreA
     enabled: config.enabled ?? true,
 
     async search(query: string, ctx: AdapterContext): Promise<RawOffer[]> {
-      const size = Math.min(Math.max(ctx.limit, 1), MAX_RESULTS);
-
       const payload = await fetchJson<UnimarcResponse>(API, {
         method: 'POST',
+        // Se repite el cuerpo tal como lo manda el sitio, incluido el rango
+        // completo: pedir menos devolvia 422. Recortar a `limit` se hace
+        // despues, que no le cuesta nada a la tienda.
         body: JSON.stringify({
           from: '0',
-          to: String(size - 1),
+          to: String(MAX_RESULTS - 1),
           searching: query,
           orderBy: '',
           promotionsOnly: false,
           userTriggered: true,
         }),
+        // El cliente ya manda las cabeceras de una llamada de API al detectar
+        // el POST con cuerpo; aqui solo falta de donde viene.
         headers: { 'Content-Type': 'application/json', Origin: SITE, Referer: `${SITE}/` },
       });
 

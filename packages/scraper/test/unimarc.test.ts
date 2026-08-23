@@ -89,7 +89,20 @@ test('la busqueda va por POST, con el termino en el cuerpo', async () => {
   const body = JSON.parse(String(request.body)) as Record<string, unknown>;
   assert.equal(body['searching'], 'panales');
   assert.equal(body['from'], '0');
-  assert.equal(body['to'], '29', 'to es inclusivo, asi que es limit - 1');
+  // El rango va completo aunque se pidan menos: acortarlo devolvia 422.
+  assert.equal(body['to'], '49');
+});
+
+test('se piden cabeceras de llamada de API, no de navegacion', async () => {
+  // Mandar Sec-Fetch-Mode: navigate en un POST a un API es incoherente y hay
+  // back-ends que lo rechazan; fue una de las sospechas del 422.
+  const { request } = await searchWith({ availableProducts: [PANAL] });
+  const headers = request.headers as Record<string, string>;
+
+  assert.equal(headers['Sec-Fetch-Mode'], 'cors');
+  assert.equal(headers['Sec-Fetch-Dest'], 'empty');
+  assert.equal(headers['Content-Type'], 'application/json');
+  assert.equal(headers['Upgrade-Insecure-Requests'], undefined);
 });
 
 test('un descuento que exige medio de pago o ser socio no se guarda como precio', async () => {

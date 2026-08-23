@@ -45,6 +45,44 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Cabeceras que describen de donde sale la peticion.
+ *
+ * Un GET de pagina y una llamada de API no se ven igual desde el navegador, y
+ * mandar las de navegacion en un POST a un API es una incoherencia que algunos
+ * back-ends rechazan (Unimarc devolvia 422).
+ */
+function browserContextHeaders(options: FetchOptions): Record<string, string> {
+  const esApi = (options.method ?? 'GET').toUpperCase() !== 'GET' || options.body !== undefined;
+
+  if (esApi) {
+    return {
+      'Sec-Fetch-Dest': 'empty',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Site': 'same-site',
+    };
+  }
+
+  return {
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Upgrade-Insecure-Requests': '1',
+  };
+}
+
+/** Motivo del error segun el cuerpo, recortado y en una linea. */
+async function describeBody(response: Response): Promise<string> {
+  try {
+    const text = (await response.text()).replace(/\s+/g, ' ').trim();
+    return text ? `: ${text.slice(0, 200)}` : '';
+  } catch {
+    // Si el cuerpo no se puede leer, el codigo solo ya es informacion.
+    return '';
+  }
+}
+
 async function request(url: string, options: FetchOptions, accept: string): Promise<Response> {
   const timeoutMs = options.timeoutMs ?? DEFAULTS.timeoutMs;
   const retries = options.retries ?? DEFAULTS.retries;
@@ -74,11 +112,7 @@ async function request(url: string, options: FetchOptions, accept: string): Prom
           'Cache-Control': 'no-cache',
           // Cabeceras que envia un navegador real. Algunos WAF rechazan
           // peticiones que solo traen User-Agent, por incoherentes.
-          'Sec-Fetch-Dest': 'document',
-          'Sec-Fetch-Mode': 'navigate',
-          'Sec-Fetch-Site': 'none',
-          'Sec-Fetch-User': '?1',
-          'Upgrade-Insecure-Requests': '1',
+          ...browserContextHeaders(options),
           'sec-ch-ua': '"Chromium";v="125", "Not.A/Brand";v="24"',
           'sec-ch-ua-mobile': '?0',
           'sec-ch-ua-platform': '"Windows"',
@@ -93,7 +127,14 @@ async function request(url: string, options: FetchOptions, accept: string): Prom
       }
 
       if (!response.ok) {
-        throw new HttpError(`HTTP ${response.status}`, response.status, url);
+        // Un 4xx suele venir con el motivo en el cuerpo, sobre todo un 422:
+        // sin leerlo, "HTTP 422" no dice que campo esta mal y obliga a
+        // adivinar. El cuerpo ya no se va a usar para nada mas.
+        throw new HttpError(
+          `HTTP ${response.status}${await describeBody(response)}`,
+          response.status,
+          url,
+        );
       }
 
       return response;
