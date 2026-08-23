@@ -102,7 +102,7 @@ firestore.rules           Quién lee, y lo único que el panel puede escribir.
 | `npm run diagnose -- --capture='URL'` | Vuelca el JSON que la página pide por XHR |
 | `npm run diagnose -- --capture='URL' --sample='ruta'` | Un producto entero de ese endpoint, y su petición |
 | `npm run diagnose -- --blocked` | ¿Los bloqueos dependen de la IP? |
-| `npm test` | Tests de la lógica pura (99 casos) |
+| `npm test` | Tests de la lógica pura (101 casos) |
 | `npm run typecheck` | TypeScript en ambos paquetes |
 | `npm run build` | Compila el panel a `packages/web/dist` |
 
@@ -213,7 +213,9 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 | **PC Factory** | HTTP · API REST propia (`api.pcfactory.cl`) | ✅ |
 | **Hites** | Sondeo de las 6 técnicas | ✅ |
 | **Unimarc** | HTTP · su propio BFF (`POST /catalog/product/search`) | ✅ |
-| Jumbo, Santa Isabel, Unimarc, Salcobrand, Ahumada | Sondeo de las 6 técnicas | 🆕 sin verificar |
+| Jumbo, Santa Isabel | Navegador · captura del XHR | 🔄 responden, falta leerlas |
+| Ahumada | Sondeo de las 6 técnicas | 🔄 responde 200, sin XHR: todo en el HTML |
+| Salcobrand | — | ⛔ ninguna ruta responde |
 | Paris, Easy, Ripley | Navegador · captura del XHR | 🔄 en prueba |
 | **Líder** | — | ⛔ PerimeterX |
 | SP Digital, Winpy | — | ⛔ muro anti-bot con 403, no es por IP |
@@ -350,6 +352,24 @@ lo dice en vez de sacar una conclusión equivocada.
 Ojo con la distinción: un `403` es un bloqueo; un `200 sin productos
 reconocidos` no lo es —la página cargó— y ahí la IP da igual. Para esas, lo que
 sirve es capturar el XHR:
+
+### Cómo se resolvió Unimarc
+
+Es el procedimiento completo, y sirve de guía para las que faltan. Cada paso
+salió de que el anterior dejara ver una pieza más:
+
+1. `--capture` mostró el endpoint entre 38 respuestas:
+   `POST bff-unimarc-ecommerce.unimarc.cl/catalog/product/search`.
+2. `--sample` volcó un producto entero, con los nombres reales de cada campo.
+   El extractor genérico no servía: el nombre vive en `item` y el precio en
+   `price`, ramas hermanas, y aquel exige que estén en el mismo objeto.
+3. La primera llamada devolvió `422` sin más. Leer el **cuerpo del error**
+   —que se estaba descartando— lo explicó: `headers.version ~ Required`.
+4. `--sample` mostró también las **cabeceras propias**: `version: 1.0.0`,
+   `source: web`, `channel: UNIMARC`.
+
+La moraleja para la próxima: un `422` o un `0 productos` casi nunca es un muro,
+y el dato que falta suele estar en la respuesta que no estábamos mirando.
 
 Para las tiendas que cargan por XHR (Líder, Ripley), volcar lo que pide la
 página deja ver la forma del JSON y el nombre de sus campos:
