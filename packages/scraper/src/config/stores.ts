@@ -80,6 +80,19 @@ function createUnknownPlatformStore(config: {
         buildUrls,
         cardSelectors: GENERIC_CARD_SELECTORS,
       }),
+      // 4. Navegador, que ademas captura el XHR. Es lo que necesitan las
+      // tiendas que responden 200 con el HTML vacio y traen sus productos
+      // por detras: Jumbo, Santa Isabel, Unimarc y Ahumada son de ese tipo.
+      // Va al final porque cuesta segundos por consulta, pero la estrategia
+      // que funciona queda recordada y las siguientes van directo a ella.
+      createBrowserAdapter({
+        id: `${config.id}-browser`,
+        label: config.label,
+        base,
+        buildUrls,
+        cardSelectors: GENERIC_CARD_SELECTORS,
+        settleMs: 2500,
+      }),
     ],
   });
 }
@@ -253,11 +266,37 @@ export const STORES: StoreAdapter[] = [
   // Aca viven los productos que se estan monitoreando: panales, desodorante,
   // suplementos, aseo. Casi todos corren sobre VTEX, cuyo catalogo publico es
   // la primera tecnica que prueba `createUnknownPlatformStore`.
-  createUnknownPlatformStore({ id: 'jumbo', label: 'Jumbo', host: 'www.jumbo.cl' }),
-  createUnknownPlatformStore({ id: 'santaisabel', label: 'Santa Isabel', host: 'www.santaisabel.cl' }),
-  createUnknownPlatformStore({ id: 'unimarc', label: 'Unimarc', host: 'www.unimarc.cl' }),
+  // Las rutas van declaradas porque ya se verifico cual responde 200 en cada
+  // una: sin esto la cadena gasta media docena de 404 antes de acertar.
+  createUnknownPlatformStore({
+    id: 'jumbo',
+    label: 'Jumbo',
+    host: 'www.jumbo.cl',
+    paths: (q) => [`https://www.jumbo.cl/busqueda?q=${enc(q)}`],
+  }),
+  createUnknownPlatformStore({
+    id: 'santaisabel',
+    label: 'Santa Isabel',
+    host: 'www.santaisabel.cl',
+    paths: (q) => [
+      `https://www.santaisabel.cl/busqueda?q=${enc(q)}`,
+      `https://www.santaisabel.cl/buscar?q=${enc(q)}`,
+    ],
+  }),
+  createUnknownPlatformStore({
+    id: 'unimarc',
+    label: 'Unimarc',
+    host: 'www.unimarc.cl',
+    paths: (q) => [`https://www.unimarc.cl/search?q=${enc(q)}`],
+  }),
   createUnknownPlatformStore({ id: 'salcobrand', label: 'Salcobrand', host: 'salcobrand.cl' }),
-  createUnknownPlatformStore({ id: 'ahumada', label: 'Farmacias Ahumada', host: 'www.farmaciasahumada.cl' }),
+  // Corre sobre Salesforce Commerce Cloud (el `.isml` del HTML lo delata).
+  createUnknownPlatformStore({
+    id: 'ahumada',
+    label: 'Farmacias Ahumada',
+    host: 'www.farmaciasahumada.cl',
+    paths: (q) => [`https://www.farmaciasahumada.cl/search?q=${enc(q)}`],
+  }),
 
   fixtureAdapter,
 ];
