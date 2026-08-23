@@ -278,7 +278,13 @@ async function captureXhr(url: string, sampleFilter: string | null = null): Prom
   console.log(`\n=== Capturando XHR de ${url} ===\n`);
 
   try {
-    const { json } = await renderPage(url, { captureJson: true, settleMs: 3000 });
+    const { html, json } = await renderPage(url, { captureJson: true, settleMs: 3000 });
+
+    // Que dice la pagina importa tanto como que pidio: sin esto, "ninguna
+    // respuesta traia productos" no distingue entre un buscador vacio, un
+    // muro pidiendo la comuna y un catalogo que no supimos leer.
+    describePage(html);
+
     console.log(`Se capturaron ${json.length} respuestas JSON.\n`);
 
     // Antes de mirar el contenido: si toda la actividad es de un anti-bot, no
@@ -389,6 +395,43 @@ async function captureXhr(url: string, sampleFilter: string | null = null): Prom
   } finally {
     await closeBrowser();
   }
+}
+
+/** Frases con las que una tienda pide elegir tienda o comuna antes de comprar. */
+const LOCATION_GATE =
+  /elige tu (tienda|comuna|local)|selecciona (tu|una) (comuna|tienda|sucursal)|ingresa tu direccion|¿donde quieres recibir|metodo de entrega|retiro en tienda/i;
+
+/** Frases de un buscador que respondio, pero sin resultados. */
+const NO_RESULTS =
+  /no (se )?encontramos|sin resultados|no hay resultados|no encontramos productos|0 resultados/i;
+
+/**
+ * Resume lo que la pagina muestra de verdad.
+ *
+ * Una pagina puede responder 200, renderizar, no pedir ningun JSON de
+ * productos y aun asi estar "bien": porque pide la comuna antes de mostrar
+ * precios, o porque de verdad no hay resultados. Distinguirlo cambia por
+ * completo el siguiente paso.
+ */
+function describePage(html: string): void {
+  const $ = cheerio.load(html);
+  $('script, style, noscript').remove();
+
+  const title = $('title').first().text().trim();
+  const texto = $('body').text().replace(/\s+/g, ' ').trim();
+
+  console.log(`Titulo: ${title || '(sin titulo)'}`);
+  console.log(`Texto visible: ${texto.length} caracteres`);
+
+  if (LOCATION_GATE.test(texto)) {
+    console.log('⚠ La pagina pide elegir tienda o comuna antes de mostrar precios.');
+    console.log('  Sin eso no carga el catalogo, y por eso no pide ningun JSON de productos.');
+  } else if (NO_RESULTS.test(texto)) {
+    console.log('⚠ El buscador respondio que no hay resultados para ese termino.');
+    console.log('  No es un fallo de lectura: prueba con un termino mas general.');
+  }
+
+  console.log(`Primeras palabras: ${texto.slice(0, 240)}${texto.length > 240 ? '…' : ''}\n`);
 }
 
 /**
