@@ -74,6 +74,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Configuracion interna: hoy, el token con el que el boton "Actualizar
+    // ahora" dispara el workflow del scraper. Solo lo lee un correo autorizado
+    // (por eso no puede ir en el bundle publico), y solo lo escribe el dueno
+    // con credenciales de admin (scripts/set-github-token.sh), nunca el cliente.
+    match /config/{doc} {
+      allow read: if isAllowed();
+      allow write: if false;
+    }
+
     // Cualquier otra ruta queda cerrada.
     match /{document=**} {
       allow read, write: if false;

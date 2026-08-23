@@ -7,7 +7,8 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
   `cajas organizadoras` y `Rexona Clinical`.
 - **Tiendas activas**: Falabella, Sodimac, IKEA y PC Factory (ver [estado de cada tienda](#estado-verificado-de-cada-tienda)).
 - **Acceso**: solo `javier.neo@gmail.com`, con Google Sign-In.
-- **Actualización**: dos veces al día vía GitHub Actions (gratis, sin plan Blaze).
+- **Actualización**: dos veces al día vía GitHub Actions (gratis, sin plan Blaze), o
+  a demanda con el botón **↻ Actualizar ahora** del panel.
 
 ## Cómo funciona
 
@@ -87,6 +88,7 @@ firestore.rules           Quién lee, y lo único que el panel puede escribir.
 | --- | --- |
 | `bash scripts/deploy.sh` | Despliegue completo: verifica, sube reglas, índices y panel |
 | `bash scripts/deploy.sh --dry` | Igual pero sin desplegar: solo comprueba |
+| `bash scripts/set-github-token.sh` | Activa el botón "Actualizar ahora" del panel (una vez) |
 | `npm run dev` | Panel web en `http://localhost:5173` |
 | `npm run scrape` | Corrida real: consulta tiendas y escribe en Firestore |
 | `npm run scrape -- --dry-run` | Consulta y muestra por pantalla, sin escribir |

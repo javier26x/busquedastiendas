@@ -16,6 +16,7 @@ import { FiltersBar } from './FiltersBar.js';
 import { ProductTable } from './ProductTable.js';
 import { ProductDetail } from './ProductDetail.js';
 import { RunStatus } from './RunStatus.js';
+import { ScrapeButton } from './ScrapeButton.js';
 import { SearchManager } from './SearchManager.js';
 import type { Product } from '../types.js';
 
@@ -94,6 +95,7 @@ export function Dashboard(): ReactNode {
         </div>
 
         <div className="topbar__user">
+          <ScrapeButton />
           <span className="muted small">{user?.email}</span>
           <button type="button" className="btn btn--ghost btn--sm" onClick={() => void logout()}>
             Salir
@@ -167,8 +169,8 @@ export function Dashboard(): ReactNode {
                   <p className="empty__title">"{pendingSearch.label}" aún no se ha consultado</p>
                   <p className="muted small">
                     Las búsquedas nuevas entran en la próxima corrida del scraper, que se ejecuta
-                    dos veces al día. También puedes lanzarla a mano desde la pestaña Actions de
-                    GitHub, o con <code>npm run scrape</code>.
+                    dos veces al día. Para no esperar, usa <strong>↻ Actualizar ahora</strong> arriba
+                    a la derecha.
                   </p>
                 </>
               ) : undefined

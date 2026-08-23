@@ -165,6 +165,45 @@ Con eso quedan activos tres workflows:
 - **Desplegar web** — publica el panel al hacer push a `main` si cambió `packages/web`.
 - **CI** — typecheck, tests y build en cada push.
 
+## Actualizar ahora
+
+El panel tiene un botón **↻ Actualizar ahora** (arriba a la derecha) que lanza una
+corrida del scraper sin esperar al cron. Para que funcione hay que darle un token
+con el que disparar el workflow. **Se hace una sola vez.**
+
+El token no puede ir en el sitio: el panel es público y cualquiera podría
+descargarlo del bundle. Por eso se guarda en Firestore, en un documento que las
+reglas solo dejan leer a tu correo autorizado.
+
+1. Crea un token de alcance **mínimo** en
+   <https://github.com/settings/personal-access-tokens/new>:
+   - **Resource owner**: tu usuario.
+   - **Repository access** → *Only select repositories* → `busquedastiendas`.
+   - **Permissions** → *Repository permissions* → **Actions**: `Read and write`.
+   - Nada más. Con eso solo puede lanzar y ver los workflows de ese repositorio; si
+     se filtrara, no da acceso al código ni a otros repos.
+2. Guárdalo en Firestore con el script (en Cloud Shell, donde tienes `gcloud`):
+
+   ```bash
+   bash scripts/set-github-token.sh
+   ```
+
+   Te pide el token (no lo muestra al escribir) y lo escribe en `config/github`.
+3. Vuelve a desplegar las reglas para que el panel pueda leer ese documento:
+
+   ```bash
+   npx --yes firebase-tools@14 deploy --only firestore:rules
+   ```
+
+   (Si usas `bash scripts/deploy.sh`, ya las sube.)
+
+Listo: al apretar el botón, el panel dispara la corrida, muestra un enlace a la
+ejecución en GitHub, y cuando termina los datos se actualizan solos.
+
+El token vive solo en Firestore. Para revocarlo, bórralo desde
+<https://github.com/settings/personal-access-tokens> y el botón dejará de funcionar
+(volver a correr el script con uno nuevo lo reactiva).
+
 ## 9. Recomendado: restringir la clave de API
 
 El sitio es público, así que su clave de API también lo es (normal en Firebase). Para

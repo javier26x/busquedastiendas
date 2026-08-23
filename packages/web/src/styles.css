@@ -1016,6 +1016,51 @@ code {
   }
 }
 
+/* --------------------------- Actualizar ahora --------------------------- */
+
+.scrape {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Spinner del tamano del texto, pensado para ir dentro de un boton: hereda
+   el color del boton para verse tanto sobre el primario como sobre el claro. */
+.spinner--inline {
+  width: 13px;
+  height: 13px;
+  border-width: 2px;
+  border-color: currentColor;
+  border-top-color: transparent;
+  display: inline-block;
+  vertical-align: -1px;
+  margin-right: 6px;
+}
+
+.scrape__link,
+.scrape__note {
+  white-space: nowrap;
+}
+
+.scrape__error {
+  color: var(--up);
+  max-width: 320px;
+}
+
+/* Enlace-boton: un boton que se ve como enlace, para acciones secundarias
+   embebidas en texto (ej: "cerrar" un error). */
+.linkish {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
 /* ------------------------------ Responsive ------------------------------ */
 
 @media (max-width: 860px) {
