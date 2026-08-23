@@ -2,8 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { extractJsonOffers } from '../src/lib/json-catalog.js';
 import { bestCapture } from '../src/adapters/browser.js';
+import type { CapturedJson } from '../src/lib/browser.js';
 
 const BASE = 'https://www.tienda.cl';
+
+/** Una respuesta capturada del navegador. El metodo no afecta la extraccion. */
+function captured(url: string, body: unknown): CapturedJson {
+  return { url, body, method: 'GET', requestBody: null };
+}
 
 /**
  * Respuestas con la forma real de cada plataforma. Son el contrato que el
@@ -193,9 +199,9 @@ test('entre las respuestas capturadas gana la que trae mas productos', () => {
 
   const best = bestCapture(
     [
-      { url: 'https://www.tienda.cl/api/banners', body: { banners: [{ img: 'a.jpg' }] } },
-      { url: 'https://www.tienda.cl/api/recomendados', body: { items: [producto(1)] } },
-      { url: 'https://www.tienda.cl/api/search?q=caja', body: { items: [1, 2, 3].map(producto) } },
+      captured('https://www.tienda.cl/api/banners', { banners: [{ img: 'a.jpg' }] }),
+      captured('https://www.tienda.cl/api/recomendados', { items: [producto(1)] }),
+      captured('https://www.tienda.cl/api/search?q=caja', { items: [1, 2, 3].map(producto) }),
     ],
     BASE,
   );
@@ -207,8 +213,8 @@ test('entre las respuestas capturadas gana la que trae mas productos', () => {
 test('si ninguna respuesta capturada trae productos, no se inventa una', () => {
   const best = bestCapture(
     [
-      { url: 'https://www.tienda.cl/api/analytics', body: { ok: true } },
-      { url: 'https://www.tienda.cl/api/menu', body: { categorias: ['hogar', 'jardin'] } },
+      captured('https://www.tienda.cl/api/analytics', { ok: true }),
+      captured('https://www.tienda.cl/api/menu', { categorias: ['hogar', 'jardin'] }),
     ],
     BASE,
   );

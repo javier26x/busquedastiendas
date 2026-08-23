@@ -36,6 +36,15 @@ export interface RenderOptions {
 export interface CapturedJson {
   url: string;
   body: unknown;
+  /** GET, POST... Un endpoint de busqueda sin parametros suele ser POST. */
+  method: string;
+  /**
+   * Cuerpo de la peticion, si lo hubo.
+   *
+   * Es imprescindible para reproducir un POST: sin el se sabe la direccion
+   * del API pero no como se le pregunta.
+   */
+  requestBody: string | null;
 }
 
 export interface RenderResult {
@@ -163,7 +172,14 @@ async function readJson(response: Response): Promise<CapturedJson | null> {
     if (length > MAX_CAPTURED_BYTES) return null;
 
     const body: unknown = await response.json();
-    return { url: response.url(), body };
+    const request = response.request();
+
+    return {
+      url: response.url(),
+      body,
+      method: request.method(),
+      requestBody: request.postData(),
+    };
   } catch {
     // Respuesta abortada, redirigida o con cuerpo ya descartado: no es un
     // error de la corrida, simplemente no hay nada que capturar.

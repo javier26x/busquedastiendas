@@ -13,6 +13,9 @@
  *   npm run diagnose -- --capture='https://www.lider.cl/search?query=panales'
  *                                               (vuelca el JSON que pide por XHR)
  *   npm run diagnose -- --blocked   (compara los bloqueos contra los de CI)
+ *   npm run diagnose -- --capture='...' --sample='catalog/product/search'
+ *                                   (vuelca entero ese endpoint, para escribir
+ *                                    el adaptador con los nombres reales)
  */
 import * as cheerio from 'cheerio';
 import type { AdapterContext, StoreAdapter } from './types.js';
@@ -104,6 +107,40 @@ interface Args {
   capture: string | null;
   /** Repite desde aqui los bloqueos que se vieron en GitHub Actions. */
   blocked: boolean;
+  /** Con --capture: vuelca entero el endpoint cuya URL contenga esto. */
+  sample: string | null;
+}
+
+/**
+ * Primer elemento del arreglo mas grande de un JSON.
+ *
+ * Cuando el extractor generico no reconoce nada, lo que hace falta es ver un
+ * elemento completo: los nombres de campo reales son lo que permite escribir
+ * el adaptador. `findProductSample` no sirve aca porque exige que el nombre y
+ * el precio esten en el mismo objeto, y varias tiendas los separan en ramas.
+ */
+function biggestArraySample(value: unknown): { path: string; item: unknown; length: number } | null {
+  let best: { path: string; item: unknown; length: number } | null = null;
+
+  const walk = (node: unknown, path: string, depth: number): void => {
+    if (depth > 8 || node === null || typeof node !== 'object') return;
+
+    if (Array.isArray(node)) {
+      const first = node.find((entry) => entry && typeof entry === 'object');
+      if (first && (!best || node.length > best.length)) {
+        best = { path, item: first, length: node.length };
+      }
+      for (const entry of node.slice(0, 2)) walk(entry, `${path}[]`, depth + 1);
+      return;
+    }
+
+    for (const [key, child] of Object.entries(node as Record<string, unknown>)) {
+      walk(child, `${path}.${key}`, depth + 1);
+    }
+  };
+
+  walk(value, '$', 0);
+  return best;
 }
 
 /**
@@ -209,6 +246,7 @@ function parseArgs(argv: string[]): Args {
   let probe: string | null = null;
   let capture: string | null = null;
   let blocked = false;
+  let sample: string | null = null;
 
   for (const arg of argv) {
     if (arg.startsWith('--query=')) query = arg.slice('--query='.length);
@@ -218,9 +256,10 @@ function parseArgs(argv: string[]): Args {
     else if (arg.startsWith('--probe=')) probe = arg.slice('--probe='.length);
     else if (arg.startsWith('--capture=')) capture = arg.slice('--capture='.length);
     else if (arg === '--blocked') blocked = true;
+    else if (arg.startsWith('--sample=')) sample = arg.slice('--sample='.length);
   }
 
-  return { query, store, dump, probe, capture, blocked };
+  return { query, store, dump, probe, capture, blocked, sample };
 }
 
 /**
@@ -230,7 +269,7 @@ function parseArgs(argv: string[]): Args {
  * adaptador captura esas respuestas pero, si no reconoce el producto dentro,
  * hace falta ver su forma para ensenarle el nombre de los campos.
  */
-async function captureXhr(url: string): Promise<void> {
+async function captureXhr(url: string, sampleFilter: string | null = null): Promise<void> {
   const { renderPage } = await import('./lib/browser.js');
   const { extractJsonOffers, topLevelKeys } = await import('./lib/json-catalog.js');
   const { closeBrowser } = await import('./lib/browser.js');
@@ -255,6 +294,37 @@ async function captureXhr(url: string): Promise<void> {
     const ranked = json
       .map((entry) => ({ ...entry, size: JSON.stringify(entry.body).length }))
       .sort((a, b) => b.size - a.size);
+
+    // Con --sample solo interesa un endpoint, y entero: es el paso final,
+    // cuando ya se sabe cual trae el catalogo y falta ver como se llaman sus
+    // campos para escribir el adaptador.
+    if (sampleFilter) {
+      const match = ranked.filter((entry) => entry.url.includes(sampleFilter));
+
+      if (match.length === 0) {
+        console.log(`Ninguna respuesta capturada contiene "${sampleFilter}". Las hubo:\n`);
+        for (const entry of ranked) console.log(`  ${entry.url.slice(0, 120)}`);
+        return;
+      }
+
+      for (const entry of match.slice(0, 2)) {
+        const found = biggestArraySample(entry.body);
+        console.log(`• ${entry.method} ${entry.url}`);
+        console.log(`  ${entry.size} bytes · claves: ${topLevelKeys(entry.body)}`);
+        if (entry.requestBody) {
+          console.log(`  cuerpo de la peticion:\n${indent(entry.requestBody, 4, 1500)}`);
+        }
+        if (!found) {
+          console.log('  no tiene ningun arreglo de objetos.\n');
+          continue;
+        }
+        console.log(`  arreglo mas grande: ${found.path} (${found.length} elementos)`);
+        console.log('  primer elemento completo:\n');
+        console.log(indent(JSON.stringify(found.item, null, 2), 4, 4000));
+        console.log('');
+      }
+      return;
+    }
 
     // El inventario completo primero: con 30 o 40 respuestas, el nombre del
     // endpoint suele delatar cual trae el catalogo antes que su contenido.
@@ -667,7 +737,15 @@ async function probe(entry: Probe, query: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const { query, store, dump, probe: probeHost, capture, blocked } = parseArgs(process.argv.slice(2));
+  const {
+    query,
+    store,
+    dump,
+    probe: probeHost,
+    capture,
+    blocked,
+    sample,
+  } = parseArgs(process.argv.slice(2));
   dumpSelector = dump;
 
   if (blocked) {
@@ -676,7 +754,7 @@ async function main(): Promise<void> {
   }
 
   if (capture) {
-    await captureXhr(capture);
+    await captureXhr(capture, sample);
     return;
   }
 
