@@ -7,10 +7,9 @@
 #
 #   curl -sSL https://raw.githubusercontent.com/javier26x/busquedastiendas/claude/monitor-precios-tiendas-j7ldxb/scripts/probe-blocked-standalone.sh | bash
 #
-# Usa exactamente las mismas cabeceras que el scraper real (packages/scraper/
-# src/lib/http.ts), asi lo unico que cambia respecto a la corrida de GitHub
-# Actions es desde donde sale la peticion. Cualquier diferencia en el
-# resultado es, por lo tanto, atribuible a la IP de origen.
+# Usa las mismas cabeceras Y el mismo seguimiento de redirecciones que el
+# scraper real (packages/scraper/src/lib/http.ts), asi lo unico que cambia
+# respecto a la corrida de GitHub Actions es desde donde sale la peticion.
 #
 set -uo pipefail
 
@@ -34,23 +33,40 @@ headers=(
   -H 'sec-ch-ua-platform: "Windows"'
 )
 
-# tienda | lo que devolvio en GitHub Actions | URL
+# --- Testigos -------------------------------------------------------------
+# Tiendas que en GitHub Actions SI funcionaron por cliente HTTP. Si estas
+# fallan aqui, la maquina no tiene salida limpia y nada de lo demas se puede
+# interpretar.
+WITNESS=(
+  'Falabella|https://www.falabella.com/falabella-cl/search?Ntt=parrilla'
+  'Sodimac|https://www.sodimac.cl/sodimac-cl/search?Ntt=parrilla'
+  'Hites|https://www.hites.com/search?q=parrilla'
+)
+
+# --- Sospechosas ----------------------------------------------------------
+# tienda | lo que devolvio en Actions POR CLIENTE HTTP | URL
 #
-# Las cuatro ultimas respondieron 200 en Actions: son el testigo. Si aca
-# tampoco responden, esta maquina no tiene salida limpia y la comparacion no
-# vale nada.
-TESTS=(
-  'SP Digital|HTTP 403|https://www.spdigital.cl/search?q=notebook'
-  'Winpy|HTTP 403|https://www.winpy.cl/search?q=notebook'
-  'Corona|fetch failed|https://www.corona.cl/search?q=toalla'
-  'La Polar|HTML en vez de JSON|https://www.lapolar.cl/search?q=panales'
-  'ABCDIN|HTML en vez de JSON|https://www.abcdin.cl/search?q=notebook'
-  'Imperial|HTTP 404|https://www.imperial.cl/search?q=madera'
-  'Construmart|HTTP 404|https://www.construmart.cl/catalogsearch/result/?q=cemento'
-  'Lider|200 (testigo)|https://www.lider.cl/search?query=panales'
-  'Paris|200 (testigo)|https://www.paris.cl/search/?q=panales'
-  'Ripley|200 (testigo)|https://simple.ripley.cl/search/panales'
-  'Easy|200 (testigo)|https://www.easy.cl/search?q=parrilla'
+# Las lineas base salen del log real de la corrida. Ojo: varias de estas ya
+# respondian 200 y su problema es que no les reconocemos los productos, no que
+# esten bloqueadas. Solo las tres primeras fallaban de verdad.
+SUSPECT=(
+  'SP Digital|403 en todo|https://www.spdigital.cl/search?q=notebook'
+  'Winpy|403 en todo|https://www.winpy.cl/search?q=notebook'
+  'Corona|sin respuesta|https://www.corona.cl/search?q=toalla'
+  'La Polar|200, sin datos|https://www.lapolar.cl/search?q=panales'
+  'ABCDIN|200, sin datos|https://www.abcdin.cl/search?q=notebook'
+  'Imperial|200, sin datos|https://www.imperial.cl/search?q=madera'
+  'Construmart|200, sin datos|https://www.construmart.cl/catalogsearch/result/?q=cemento'
+)
+
+# --- Solo informativas ----------------------------------------------------
+# Estas van por navegador en el scraper. Un 403 a curl es lo ESPERADO y no
+# dice nada sobre la IP: bloquean por la huella TLS del cliente, no por origen.
+BROWSER=(
+  'Lider|https://www.lider.cl/search?query=panales'
+  'Paris|https://www.paris.cl/search/?q=panales'
+  'Ripley|https://simple.ripley.cl/search/panales'
+  'Easy|https://www.easy.cl/search?q=parrilla'
 )
 
 if ! command -v curl >/dev/null 2>&1; then
@@ -72,74 +88,93 @@ join_list() {
 BODY="$(mktemp)"
 trap 'rm -f "${BODY}"' EXIT
 
-printf '\n\033[1m=== Bloqueos vistos desde esta maquina ===\033[0m\n\n'
-printf 'IP publica: %s\n' "$(curl -sS --max-time 10 https://api.ipify.org 2>/dev/null || echo 'no se pudo averiguar')"
-printf 'Mismas cabeceras que el scraper real; lo unico distinto es la IP.\n\n'
+# Devuelve "codigo|tamano|veredicto" y deja el cuerpo en $BODY.
+fetch() {
+  local url="$1" code size
+  # Vaciar antes: si curl no llega a escribir, el cuerpo de la peticion
+  # ANTERIOR seguiria ahi y se analizaria como si fuera esta.
+  : >"${BODY}"
 
-mejoraron=()
-testigos_caidos=()
-
-for row in "${TESTS[@]}"; do
-  IFS='|' read -r label en_actions url <<<"${row}"
-
-  # El `|| echo` iria DENTRO de la sustitucion y se sumaria a lo que curl ya
-  # escribio, dando "000000". Se deja fallar y se normaliza despues.
-  code="$(curl -sS -o "${BODY}" -w '%{http_code}' --max-time 25 --compressed \
+  # -L sigue las redirecciones, igual que el cliente real (redirect: 'follow').
+  # Sin esto, un 302 se reporta como fallo cuando en realidad lleva a la pagina.
+  code="$(curl -sSL -o "${BODY}" -w '%{http_code}' --max-time 25 --compressed \
     "${headers[@]}" "${url}" 2>/dev/null)"
   [ -z "${code}" ] && code='000'
   size="$(wc -c <"${BODY}" 2>/dev/null || echo 0)"
 
-  # Un 200 puede ser igualmente un muro anti-bot: se revisa el contenido.
-  if grep -qiE 'captcha|are you a robot|access denied|incapsula|attention required|just a moment' "${BODY}" 2>/dev/null; then
-    resultado="${code} pero es un muro anti-bot"
-    ok=0
+  # El orden importa: sin respuesta se decide por el codigo, nunca por el
+  # contenido, que en ese caso esta vacio.
+  if [ "${code}" = "000" ]; then
+    printf '000|%s|sin respuesta (DNS, TLS o timeout)' "${size}"
+  elif grep -qiE 'captcha|are you a robot|access denied|incapsula|attention required|just a moment' "${BODY}" 2>/dev/null; then
+    printf '%s|%s|%s pero es un muro anti-bot' "${code}" "${size}" "${code}"
   elif [ "${code}" = "200" ]; then
-    resultado="200 OK (${size} bytes)"
-    ok=1
-  elif [ "${code}" = "000" ]; then
-    resultado="sin respuesta (DNS, TLS o timeout)"
-    ok=0
+    printf '200|%s|200 OK (%s bytes)' "${size}" "${size}"
   else
-    resultado="HTTP ${code}"
-    ok=0
+    printf '%s|%s|HTTP %s' "${code}" "${size}" "${code}"
   fi
+}
 
-  marca='  '
-  case "${en_actions}" in
-    '200 (testigo)')
-      [ "${ok}" = "0" ] && testigos_caidos+=("${label}")
-      ;;
-    *)
-      if [ "${ok}" = "1" ]; then
-        marca='🟢'
-        mejoraron+=("${label}")
-      fi
-      ;;
-  esac
+printf '\n\033[1m=== Bloqueos vistos desde esta maquina ===\033[0m\n\n'
+printf 'IP publica: %s\n' "$(curl -sS --max-time 10 https://api.ipify.org 2>/dev/null || echo 'no se pudo averiguar')"
+printf 'Mismas cabeceras y mismas redirecciones que el scraper real.\n'
 
-  printf '%s %-13s en Actions: %-22s aqui: %s\n' "${marca}" "${label}" "${en_actions}" "${resultado}"
+# ---------------------------------------------------------------------------
+printf '\n\033[1m1. Testigos\033[0m (en Actions funcionaban por HTTP)\n\n'
+# ---------------------------------------------------------------------------
+caidos=()
+for row in "${WITNESS[@]}"; do
+  IFS='|' read -r label url <<<"${row}"
+  IFS='|' read -r code _size verdict <<<"$(fetch "${url}")"
+  [ "${code}" = "200" ] || caidos+=("${label}")
+  printf '   %-13s %s\n' "${label}" "${verdict}"
 done
 
-printf '\n'
-
-# Antes de concluir: si las que si respondian en CI tampoco responden aca, esta
-# maquina no tiene salida directa y afirmar cualquier cosa seria enganoso.
-if [ ${#testigos_caidos[@]} -gt 0 ]; then
-  printf '\033[33m⚠ No se puede concluir\033[0m: %s tambien fallan aqui,\n' "$(join_list "${testigos_caidos[@]}")"
-  printf '  y en GitHub Actions respondian 200. Esta maquina esta detras de un\n'
-  printf '  proxy o cortafuegos que bloquea las tiendas.\n'
+if [ ${#caidos[@]} -gt 0 ]; then
+  printf '\n\033[33m⚠ No se puede concluir\033[0m: %s deberian responder 200 y no lo hacen.\n' "$(join_list "${caidos[@]}")"
+  printf '  Esta maquina no tiene salida limpia a internet; el resto de la tabla\n'
+  printf '  no significaria nada.\n\n'
   exit 0
 fi
 
-if [ ${#mejoraron[@]} -gt 0 ]; then
-  printf '\033[32mEstas responden aqui y NO en GitHub Actions:\033[0m %s\n' "$(join_list "${mejoraron[@]}")"
-  printf '\nEse bloqueo era por la reputacion de la IP del runner: correr el\n'
-  printf 'scraper en este servidor las recupera.\n'
-else
-  printf 'Ninguna cambio de resultado: el bloqueo no depende de la IP, asi que\n'
-  printf 'mover el scraper a este servidor no recuperaria ninguna tienda.\n'
-fi
+# ---------------------------------------------------------------------------
+printf '\n\033[1m2. Las que fallaban por HTTP en Actions\033[0m\n\n'
+# ---------------------------------------------------------------------------
+mejoraron=()
+for row in "${SUSPECT[@]}"; do
+  IFS='|' read -r label en_actions url <<<"${row}"
+  IFS='|' read -r code _size verdict <<<"$(fetch "${url}")"
 
-printf '\nOjo: "200 sin productos reconocidos" en Actions (Lider, Paris, Ripley,\n'
-printf 'Easy) NO es un bloqueo, la pagina cargaba. Para esas la IP da igual;\n'
-printf 'lo que sirve es capturar su XHR.\n\n'
+  marca='  '
+  # Solo cuenta como recuperada si antes fallaba y ahora responde.
+  if [ "${code}" = "200" ] && [[ "${en_actions}" != 200* ]]; then
+    marca='🟢'
+    mejoraron+=("${label}")
+  fi
+
+  printf '%s %-13s en Actions: %-16s aqui: %s\n' "${marca}" "${label}" "${en_actions}" "${verdict}"
+done
+
+# ---------------------------------------------------------------------------
+printf '\n\033[1m3. Las que van por navegador\033[0m (informativo)\n\n'
+# ---------------------------------------------------------------------------
+for row in "${BROWSER[@]}"; do
+  IFS='|' read -r label url <<<"${row}"
+  IFS='|' read -r _code _size verdict <<<"$(fetch "${url}")"
+  printf '   %-13s %s\n' "${label}" "${verdict}"
+done
+printf '\n   Un 403 aqui es lo esperado: bloquean la huella TLS de curl, no la IP.\n'
+printf '   En el scraper van con Chromium y cargan bien. No dependen de esto.\n'
+
+# ---------------------------------------------------------------------------
+printf '\n\033[1mVeredicto\033[0m\n\n'
+# ---------------------------------------------------------------------------
+if [ ${#mejoraron[@]} -gt 0 ]; then
+  printf '\033[32mResponden aqui y NO en GitHub Actions:\033[0m %s\n' "$(join_list "${mejoraron[@]}")"
+  printf 'Ese bloqueo era por la reputacion de la IP del runner: mover el scraper\n'
+  printf 'a este servidor las recupera.\n\n'
+else
+  printf 'Ninguna tienda cambio de resultado.\n\n'
+  printf 'El bloqueo no depende de la IP, asi que mover el scraper a este\n'
+  printf 'servidor no recuperaria ninguna tienda.\n\n'
+fi
