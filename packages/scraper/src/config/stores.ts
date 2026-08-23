@@ -6,6 +6,7 @@ import { createFallbackAdapter } from '../adapters/fallback.js';
 import { createDomCardsAdapter } from '../adapters/dom-cards.js';
 import { createBrowserAdapter } from '../adapters/browser.js';
 import { createPcFactoryAdapter } from '../adapters/pcfactory.js';
+import { createUnimarcAdapter } from '../adapters/unimarc.js';
 import { createShopifyAdapter, createWooCommerceAdapter } from '../adapters/platform.js';
 import { fixtureAdapter } from '../adapters/fixture.js';
 
@@ -283,12 +284,9 @@ export const STORES: StoreAdapter[] = [
       `https://www.santaisabel.cl/buscar?q=${enc(q)}`,
     ],
   }),
-  createUnknownPlatformStore({
-    id: 'unimarc',
-    label: 'Unimarc',
-    host: 'www.unimarc.cl',
-    paths: (q) => [`https://www.unimarc.cl/search?q=${enc(q)}`],
-  }),
+  // Adaptador propio: usa el mismo BFF que su buscador web, encontrado
+  // capturando el XHR del navegador. Una peticion y sin HTML de por medio.
+  createUnimarcAdapter(),
   createUnknownPlatformStore({ id: 'salcobrand', label: 'Salcobrand', host: 'salcobrand.cl' }),
   // Corre sobre Salesforce Commerce Cloud (el `.isml` del HTML lo delata).
   createUnknownPlatformStore({

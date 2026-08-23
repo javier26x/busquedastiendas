@@ -5,7 +5,8 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 
 - **Búsquedas**: se administran desde el panel; la semilla trae `bodegas de jardín`,
   `cajas organizadoras` y `Rexona Clinical`.
-- **Tiendas activas**: Falabella, Sodimac, IKEA y PC Factory (ver [estado de cada tienda](#estado-verificado-de-cada-tienda)).
+- **Tiendas que traen datos**: Falabella, Sodimac, IKEA, PC Factory, Hites y Unimarc
+  (ver [estado de cada tienda](#estado-verificado-de-cada-tienda)).
 - **Acceso**: solo `javier.neo@gmail.com`, con Google Sign-In.
 - **Actualización**: dos veces al día vía GitHub Actions (gratis, sin plan Blaze), o
   a demanda con el botón **↻ Actualizar ahora** del panel.
@@ -16,7 +17,7 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 GitHub Actions (cron 2×/día)
         │
         ▼
-   packages/scraper ──consulta──► Falabella · Sodimac · IKEA · PC Factory
+   packages/scraper ──consulta──► Falabella · Sodimac · IKEA · PC Factory · Hites · Unimarc
         │
         │ normaliza, filtra ruido, calcula variación y descuento
         ▼
@@ -98,7 +99,10 @@ firestore.rules           Quién lee, y lo único que el panel puede escribir.
 | `npm run seed` | Carga productos de ejemplo en Firestore |
 | `npm run purge -- --store=ikea` | Borra los productos de una tienda y su historial |
 | `npm run diagnose -- --probe=www.tienda.cl` | Prueba las 4 APIs públicas y dice cuál sirve |
-| `npm test` | Tests de la lógica pura (93 casos) |
+| `npm run diagnose -- --capture='URL'` | Vuelca el JSON que la página pide por XHR |
+| `npm run diagnose -- --capture='URL' --sample='ruta'` | Un producto entero de ese endpoint, y su petición |
+| `npm run diagnose -- --blocked` | ¿Los bloqueos dependen de la IP? |
+| `npm test` | Tests de la lógica pura (99 casos) |
 | `npm run typecheck` | TypeScript en ambos paquetes |
 | `npm run build` | Compila el panel a `packages/web/dist` |
 
@@ -208,6 +212,7 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 | **IKEA** | Navegador · tarjetas del DOM, vía `ikea.com/cl/es` | ✅ |
 | **PC Factory** | HTTP · API REST propia (`api.pcfactory.cl`) | ✅ |
 | **Hites** | Sondeo de las 6 técnicas | ✅ |
+| **Unimarc** | HTTP · su propio BFF (`POST /catalog/product/search`) | ✅ |
 | Jumbo, Santa Isabel, Unimarc, Salcobrand, Ahumada | Sondeo de las 6 técnicas | 🆕 sin verificar |
 | Paris, Easy, Ripley | Navegador · captura del XHR | 🔄 en prueba |
 | **Líder** | — | ⛔ PerimeterX |
@@ -249,6 +254,7 @@ paga cualquiera**, no el más bajo:
 | --- | --- | --- |
 | Falabella, Sodimac | precio normal | precio CMR |
 | PC Factory | `precio.normal` | `efectivo`, `debito`, `bancoEstado` |
+| Unimarc | `price.price` | descuentos con `paymentMethod` o `membership` |
 | Cualquiera leída por JSON | el campo sin condiciones | lo que mencione tarjeta, banco, efectivo, débito o cuotas |
 
 El `listPrice` tachado sale de `referencia`, que es justo el número que se infla

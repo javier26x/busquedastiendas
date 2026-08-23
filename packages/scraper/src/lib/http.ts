@@ -17,6 +17,10 @@ export interface FetchOptions {
   headers?: Record<string, string>;
   /** Espera minima antes de disparar la peticion (cortesia con la tienda). */
   politeDelayMs?: number;
+  /** Por defecto GET. Algunos buscadores solo responden a POST. */
+  method?: string;
+  /** Cuerpo de la peticion, ya serializado. */
+  body?: string;
 }
 
 const DEFAULTS = {
@@ -61,6 +65,8 @@ async function request(url: string, options: FetchOptions, accept: string): Prom
       const response = await fetch(url, {
         signal: controller.signal,
         redirect: 'follow',
+        ...(options.method ? { method: options.method } : {}),
+        ...(options.body === undefined ? {} : { body: options.body }),
         headers: {
           'User-Agent': DEFAULT_UA,
           Accept: accept,
