@@ -256,6 +256,16 @@ async function captureXhr(url: string): Promise<void> {
       .map((entry) => ({ ...entry, size: JSON.stringify(entry.body).length }))
       .sort((a, b) => b.size - a.size);
 
+    // El inventario completo primero: con 30 o 40 respuestas, el nombre del
+    // endpoint suele delatar cual trae el catalogo antes que su contenido.
+    if (ranked.length > 8) {
+      console.log('Todas las respuestas capturadas, de mayor a menor:\n');
+      for (const entry of ranked) {
+        console.log(`  ${String(entry.size).padStart(8)} B  ${entry.url.slice(0, 130)}`);
+      }
+      console.log('\nDetalle de las 8 mas grandes:\n');
+    }
+
     for (const entry of ranked.slice(0, 8)) {
       const offers = extractJsonOffers(entry.body, { base });
       console.log(`• ${entry.url}`);
