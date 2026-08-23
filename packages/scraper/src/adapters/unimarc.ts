@@ -20,6 +20,19 @@ import { truncate } from '../lib/text.js';
 const API = 'https://bff-unimarc-ecommerce.unimarc.cl/catalog/product/search';
 const SITE = 'https://www.unimarc.cl';
 
+/**
+ * Cabeceras propias que el BFF exige.
+ *
+ * Sin `version` y `source` responde 422 nombrandolas; `channel` la manda el
+ * sitio siempre y se replica por coherencia. Su navegador manda ademas
+ * `anonymous` y `session` (identificadores aleatorios), pero no los pide.
+ */
+const BFF_HEADERS = {
+  version: '1.0.0',
+  source: 'web',
+  channel: 'UNIMARC',
+} as const;
+
 /** Tope por peticion. `to` es inclusivo, asi que se resta uno. */
 const MAX_RESULTS = 50;
 
@@ -76,8 +89,13 @@ export function createUnimarcAdapter(config: { enabled?: boolean } = {}): StoreA
           userTriggered: true,
         }),
         // El cliente ya manda las cabeceras de una llamada de API al detectar
-        // el POST con cuerpo; aqui solo falta de donde viene.
-        headers: { 'Content-Type': 'application/json', Origin: SITE, Referer: `${SITE}/` },
+        // el POST con cuerpo; aqui van de donde viene y las propias del BFF.
+        headers: {
+          'Content-Type': 'application/json',
+          Origin: SITE,
+          Referer: `${SITE}/`,
+          ...BFF_HEADERS,
+        },
       });
 
       // Los agotados igual interesan: se sigue su precio y el panel los marca.

@@ -95,7 +95,7 @@ test('la busqueda va por POST, con el termino en el cuerpo', async () => {
 
 test('se piden cabeceras de llamada de API, no de navegacion', async () => {
   // Mandar Sec-Fetch-Mode: navigate en un POST a un API es incoherente y hay
-  // back-ends que lo rechazan; fue una de las sospechas del 422.
+  // back-ends que lo rechazan.
   const { request } = await searchWith({ availableProducts: [PANAL] });
   const headers = request.headers as Record<string, string>;
 
@@ -103,6 +103,17 @@ test('se piden cabeceras de llamada de API, no de navegacion', async () => {
   assert.equal(headers['Sec-Fetch-Dest'], 'empty');
   assert.equal(headers['Content-Type'], 'application/json');
   assert.equal(headers['Upgrade-Insecure-Requests'], undefined);
+});
+
+test('van las cabeceras propias que el BFF exige', async () => {
+  // Sin estas responde 422 nombrandolas:
+  //   Path: headers.version ~ Required | Path: headers.source ~ Required
+  const { request } = await searchWith({ availableProducts: [PANAL] });
+  const headers = request.headers as Record<string, string>;
+
+  assert.equal(headers['version'], '1.0.0');
+  assert.equal(headers['source'], 'web');
+  assert.equal(headers['channel'], 'UNIMARC');
 });
 
 test('un descuento que exige medio de pago o ser socio no se guarda como precio', async () => {
