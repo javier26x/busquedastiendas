@@ -174,25 +174,32 @@ export const STORES: StoreAdapter[] = [
     ],
     settleMs: 2500,
   }),
-  // Servia una pagina anti-bot al cliente HTTP.
+  // Protegida con PerimeterX: verificado con `--capture`, las unicas
+  // respuestas que pide la pagina son las del recolector de huellas
+  // (collector-*.px-cloud.net). Los productos nunca llegan a cargar, ni con
+  // navegador. No es un problema de extraccion y no se arregla con codigo:
+  // haria falta IP residencial o un servicio de desbloqueo de pago.
   createBrowserAdapter({
     id: 'lider',
     label: 'Lider',
+    enabled: false,
     base: 'https://www.lider.cl',
     buildUrls: (q) => [`https://www.lider.cl/search?query=${enc(q)}`],
     settleMs: 2500,
   }),
-  // Cargan por XHR y no se les reconocio nada en el HTML. Ahora la cadena
-  // prueba antes cuatro catalogos JSON publicos, que es lo que les faltaba.
+  // Responden 200 pero ninguna de las seis tecnicas les reconocio un producto,
+  // y ademas son de construccion: no venden nada de lo que se monitorea.
   createUnknownPlatformStore({
     id: 'construmart',
     label: 'Construmart',
     host: 'www.construmart.cl',
+    enabled: false,
   }),
   createUnknownPlatformStore({
     id: 'imperial',
     label: 'Imperial',
     host: 'www.imperial.cl',
+    enabled: false,
   }),
 
   // --- Candidatas sin verificar --------------------------------------------
@@ -200,12 +207,42 @@ export const STORES: StoreAdapter[] = [
   // sondea las seis tecnicas y el log de la primera corrida dice cual sirvio.
   // Si alguna queda en rojo, apagarla es poner `enabled: false` en su bloque.
   createUnknownPlatformStore({ id: 'hites', label: 'Hites', host: 'www.hites.com' }),
-  createUnknownPlatformStore({ id: 'lapolar', label: 'La Polar', host: 'www.lapolar.cl' }),
-  createUnknownPlatformStore({ id: 'abcdin', label: 'ABCDIN', host: 'www.abcdin.cl' }),
-  createUnknownPlatformStore({ id: 'corona', label: 'Corona', host: 'www.corona.cl' }),
-  // Informatica, para acompanar a PC Factory.
-  createUnknownPlatformStore({ id: 'spdigital', label: 'SP Digital', host: 'www.spdigital.cl' }),
-  createUnknownPlatformStore({ id: 'winpy', label: 'Winpy', host: 'www.winpy.cl' }),
+  // La Polar y ABCDIN son el mismo sitio tras la fusion: responden 200 pero
+  // ninguna tecnica les saca un producto (SPA con todo tras el muro).
+  createUnknownPlatformStore({
+    id: 'lapolar',
+    label: 'La Polar',
+    host: 'www.lapolar.cl',
+    enabled: false,
+  }),
+  createUnknownPlatformStore({
+    id: 'abcdin',
+    label: 'ABCDIN',
+    host: 'www.abcdin.cl',
+    enabled: false,
+  }),
+  // No resuelve ni conecta desde ninguna de las dos IP probadas.
+  createUnknownPlatformStore({
+    id: 'corona',
+    label: 'Corona',
+    host: 'www.corona.cl',
+    enabled: false,
+  }),
+  // Informatica, para acompanar a PC Factory. Ambas devuelven un muro
+  // anti-bot con 403, igual desde GitHub Actions que desde un VPS: el bloqueo
+  // no es por reputacion de IP.
+  createUnknownPlatformStore({
+    id: 'spdigital',
+    label: 'SP Digital',
+    host: 'www.spdigital.cl',
+    enabled: false,
+  }),
+  createUnknownPlatformStore({
+    id: 'winpy',
+    label: 'Winpy',
+    host: 'www.winpy.cl',
+    enabled: false,
+  }),
 
   // --- Supermercados y farmacias -------------------------------------------
   // Aca viven los productos que se estan monitoreando: panales, desodorante,

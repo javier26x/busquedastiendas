@@ -242,6 +242,15 @@ async function captureXhr(url: string): Promise<void> {
     const { json } = await renderPage(url, { captureJson: true, settleMs: 3000 });
     console.log(`Se capturaron ${json.length} respuestas JSON.\n`);
 
+    // Antes de mirar el contenido: si toda la actividad es de un anti-bot, no
+    // hay nada que parsear y decir "0 productos" mandaria a buscar un error de
+    // extraccion donde en realidad hay un bloqueo.
+    const guardias = [...new Set(json.flatMap((entry) => antibot(entry.url)))];
+    if (guardias.length > 0) {
+      console.log(`⚠ Esta tienda usa ${guardias.join(' y ')}.`);
+      console.log('  Lo capturado son sus llamadas de deteccion, no productos.\n');
+    }
+
     // Se ordena por tamano: el listado de resultados suele ser el mas grande.
     const ranked = json
       .map((entry) => ({ ...entry, size: JSON.stringify(entry.body).length }))
@@ -270,10 +279,41 @@ async function captureXhr(url: string): Promise<void> {
 
     if (json.length === 0) {
       console.log('La pagina no pidio ningun JSON: sus productos no llegan por XHR.');
+      return;
+    }
+
+    const conProductos = json.filter(
+      (entry) => extractJsonOffers(entry.body, { base }).length > 0,
+    );
+
+    if (conProductos.length === 0) {
+      console.log('Ninguna respuesta traia productos.');
+      if (guardias.length > 0) {
+        console.log(
+          `Los productos nunca llegaron a cargar: ${guardias.join(' y ')} corto la pagina antes.\n` +
+            'No es un problema de extraccion, es un bloqueo. Saltarlo no se\n' +
+            'resuelve con codigo: haria falta IP residencial o un servicio de\n' +
+            'desbloqueo de pago.',
+        );
+      }
     }
   } finally {
     await closeBrowser();
   }
+}
+
+/** Servicios anti-bot reconocibles por el dominio al que llaman. */
+const ANTIBOT: { patron: RegExp; nombre: string }[] = [
+  { patron: /px-cloud\.net|perimeterx/i, nombre: 'PerimeterX (HUMAN)' },
+  { patron: /datadome/i, nombre: 'DataDome' },
+  { patron: /akstat|akamaihd|\/_abck|akamai/i, nombre: 'Akamai Bot Manager' },
+  { patron: /incapsula|imperva/i, nombre: 'Imperva Incapsula' },
+  { patron: /cdn-cgi\/challenge|turnstile/i, nombre: 'Cloudflare' },
+  { patron: /recaptcha|hcaptcha/i, nombre: 'CAPTCHA' },
+];
+
+function antibot(url: string): string[] {
+  return ANTIBOT.filter((entry) => entry.patron.test(url)).map((entry) => entry.nombre);
 }
 
 /**

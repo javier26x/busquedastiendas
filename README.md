@@ -207,14 +207,28 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 | **Sodimac** | HTTP · datos estructurados (enlace armado del `productId`) | ✅ |
 | **IKEA** | Navegador · tarjetas del DOM, vía `ikea.com/cl/es` | ✅ |
 | **PC Factory** | HTTP · API REST propia (`api.pcfactory.cl`) | ✅ |
-| Paris, Easy, Ripley, Líder | Navegador · captura del XHR | 🔄 reactivadas |
-| Construmart, Imperial | Sondeo de las 6 técnicas | 🔄 reactivadas |
-| Hites, La Polar, ABCDIN, Corona, SP Digital, Winpy | Sondeo de las 6 técnicas | 🆕 sin verificar |
+| **Hites** | Sondeo de las 6 técnicas | ✅ |
+| Jumbo, Santa Isabel, Unimarc, Salcobrand, Ahumada | Sondeo de las 6 técnicas | 🆕 sin verificar |
+| Paris, Easy, Ripley | Navegador · captura del XHR | 🔄 en prueba |
+| **Líder** | — | ⛔ PerimeterX |
+| SP Digital, Winpy | — | ⛔ muro anti-bot con 403, no es por IP |
+| La Polar, ABCDIN, Construmart, Imperial | — | ⛔ 200 pero sin productos reconocibles |
+| Corona | — | ⛔ no conecta |
 | Mercado Libre | — | ⛔ API con token e interstitial anti-bot |
 
-Las marcadas 🔄 fallaban con las técnicas anteriores y se reactivaron porque
-ahora hay una que ataca su causa: cargan por XHR y ese JSON ya se captura. Las 🆕
-están declaradas solo por su host, a la espera de la primera corrida.
+Las ⛔ están declaradas con su motivo anotado en `config/stores.ts` y `enabled:
+false`; se reactivan cambiando esa línea.
+
+**Sobre los anti-bot comerciales.** Líder resultó estar tras PerimeterX: con
+`--capture` se ve que lo único que pide la página son las llamadas de su
+recolector de huellas (`collector-*.px-cloud.net`), y los productos nunca
+cargan, ni con navegador. Eso no es un problema de extracción y no se resuelve
+con código —haría falta IP residencial o un servicio de desbloqueo de pago—,
+así que se descarta en vez de dejarla fallando en cada corrida.
+
+Y no es cuestión de dónde corra el scraper: `--blocked` comparó los mismos
+pedidos desde GitHub Actions y desde un VPS con IP chilena, y los 403 fueron
+idénticos. El bloqueo no depende de la reputación de la IP.
 
 Para ver cuáles respondieron y con qué técnica:
 
