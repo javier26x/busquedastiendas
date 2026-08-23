@@ -311,6 +311,15 @@ async function captureXhr(url: string, sampleFilter: string | null = null): Prom
         const found = biggestArraySample(entry.body);
         console.log(`• ${entry.method} ${entry.url}`);
         console.log(`  ${entry.size} bytes · claves: ${topLevelKeys(entry.body)}`);
+        const propias = ownHeaders(entry.requestHeaders);
+        if (propias.length > 0) {
+          // Estas son las que hay que replicar: varios BFF las exigen y
+          // devuelven 422 sin ellas.
+          console.log('  cabeceras propias de la tienda:');
+          for (const [name, value] of propias) {
+            console.log(`    ${name}: ${value.slice(0, 100)}`);
+          }
+        }
         if (entry.requestBody) {
           console.log(`  cuerpo de la peticion:\n${indent(entry.requestBody, 4, 1500)}`);
         }
@@ -380,6 +389,27 @@ async function captureXhr(url: string, sampleFilter: string | null = null): Prom
   } finally {
     await closeBrowser();
   }
+}
+
+/**
+ * Cabeceras estandar que manda cualquier navegador.
+ *
+ * Se descartan del diagnostico para que queden a la vista las propias de la
+ * tienda, que son las que hay que replicar en el adaptador.
+ */
+const STANDARD_HEADERS = new Set([
+  'accept', 'accept-encoding', 'accept-language', 'cache-control', 'connection',
+  'content-length', 'content-type', 'cookie', 'host', 'origin', 'pragma',
+  'referer', 'user-agent', 'dnt', 'te', 'priority',
+]);
+
+function ownHeaders(headers: Record<string, string>): [string, string][] {
+  return Object.entries(headers)
+    .filter(([name]) => {
+      const lower = name.toLowerCase();
+      return !STANDARD_HEADERS.has(lower) && !lower.startsWith('sec-') && !lower.startsWith(':');
+    })
+    .sort(([a], [b]) => a.localeCompare(b));
 }
 
 /** Servicios anti-bot reconocibles por el dominio al que llaman. */

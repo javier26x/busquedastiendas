@@ -45,6 +45,14 @@ export interface CapturedJson {
    * del API pero no como se le pregunta.
    */
   requestBody: string | null;
+  /**
+   * Cabeceras de la peticion.
+   *
+   * Varios BFF exigen cabeceras propias (`version`, `source`, claves de
+   * cliente) y rechazan la llamada sin ellas. Sin esto se descubre la
+   * direccion y el cuerpo, y aun asi la peticion falla.
+   */
+  requestHeaders: Record<string, string>;
 }
 
 export interface RenderResult {
@@ -179,6 +187,7 @@ async function readJson(response: Response): Promise<CapturedJson | null> {
       body,
       method: request.method(),
       requestBody: request.postData(),
+      requestHeaders: request.headers(),
     };
   } catch {
     // Respuesta abortada, redirigida o con cuerpo ya descartado: no es un

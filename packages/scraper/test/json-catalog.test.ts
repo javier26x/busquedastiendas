@@ -8,7 +8,7 @@ const BASE = 'https://www.tienda.cl';
 
 /** Una respuesta capturada del navegador. El metodo no afecta la extraccion. */
 function captured(url: string, body: unknown): CapturedJson {
-  return { url, body, method: 'GET', requestBody: null };
+  return { url, body, method: 'GET', requestBody: null, requestHeaders: {} };
 }
 
 /**
