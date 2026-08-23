@@ -10,6 +10,8 @@
  *   npm run diagnose -- --query="caja organizadora"
  *   npm run diagnose -- --store=easy
  *   npm run diagnose -- --probe=www.tienda.cl   (que tecnica sirve para esa tienda)
+ *   npm run diagnose -- --capture='https://www.lider.cl/search?query=panales'
+ *                                               (vuelca el JSON que pide por XHR)
  */
 import * as cheerio from 'cheerio';
 import type { AdapterContext, StoreAdapter } from './types.js';
@@ -97,6 +99,8 @@ interface Args {
   dump: string | null;
   /** Host a sondear con todas las tecnicas conocidas. */
   probe: string | null;
+  /** URL a renderizar en el navegador para volcar el JSON que pide por XHR. */
+  capture: string | null;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -104,6 +108,7 @@ function parseArgs(argv: string[]): Args {
   let store: string | null = null;
   let dump: string | null = null;
   let probe: string | null = null;
+  let capture: string | null = null;
 
   for (const arg of argv) {
     if (arg.startsWith('--query=')) query = arg.slice('--query='.length);
@@ -111,9 +116,63 @@ function parseArgs(argv: string[]): Args {
     // Vuelca el HTML de un selector concreto, para afinar un adaptador.
     else if (arg.startsWith('--dump=')) dump = arg.slice('--dump='.length);
     else if (arg.startsWith('--probe=')) probe = arg.slice('--probe='.length);
+    else if (arg.startsWith('--capture=')) capture = arg.slice('--capture='.length);
   }
 
-  return { query, store, dump, probe };
+  return { query, store, dump, probe, capture };
+}
+
+/**
+ * Renderiza una URL en el navegador y vuelca el JSON que la pagina pidio.
+ *
+ * Es para las tiendas que cargan sus productos por XHR (Lider, Ripley): el
+ * adaptador captura esas respuestas pero, si no reconoce el producto dentro,
+ * hace falta ver su forma para ensenarle el nombre de los campos.
+ */
+async function captureXhr(url: string): Promise<void> {
+  const { renderPage } = await import('./lib/browser.js');
+  const { extractJsonOffers, topLevelKeys } = await import('./lib/json-catalog.js');
+  const { closeBrowser } = await import('./lib/browser.js');
+
+  const base = new URL(url).origin;
+  console.log(`\n=== Capturando XHR de ${url} ===\n`);
+
+  try {
+    const { json } = await renderPage(url, { captureJson: true, settleMs: 3000 });
+    console.log(`Se capturaron ${json.length} respuestas JSON.\n`);
+
+    // Se ordena por tamano: el listado de resultados suele ser el mas grande.
+    const ranked = json
+      .map((entry) => ({ ...entry, size: JSON.stringify(entry.body).length }))
+      .sort((a, b) => b.size - a.size);
+
+    for (const entry of ranked.slice(0, 8)) {
+      const offers = extractJsonOffers(entry.body, { base });
+      console.log(`• ${entry.url}`);
+      console.log(`  ${entry.size} bytes · claves: ${topLevelKeys(entry.body)}`);
+      console.log(`  el extractor generico saca: ${offers.length} producto(s)`);
+
+      // Donde hay arreglos grandes: ahi suelen estar los productos.
+      const arrays = describeArrays(entry.body);
+      if (arrays.length > 0) {
+        console.log('  arreglos:');
+        for (const line of arrays) console.log(`    ${line}`);
+      }
+
+      const sample = findProductSample(entry.body);
+      if (sample && offers.length === 0) {
+        console.log(`  posible producto en ${sample.path}:`);
+        console.log(indent(JSON.stringify(sample.item, null, 2), 4, 1200));
+      }
+      console.log('');
+    }
+
+    if (json.length === 0) {
+      console.log('La pagina no pidio ningun JSON: sus productos no llegan por XHR.');
+    }
+  } finally {
+    await closeBrowser();
+  }
 }
 
 /**
@@ -457,8 +516,13 @@ async function probe(entry: Probe, query: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const { query, store, dump, probe: probeHost } = parseArgs(process.argv.slice(2));
+  const { query, store, dump, probe: probeHost, capture } = parseArgs(process.argv.slice(2));
   dumpSelector = dump;
+
+  if (capture) {
+    await captureXhr(capture);
+    return;
+  }
 
   if (probeHost) {
     await probeTechniques(probeHost, query);

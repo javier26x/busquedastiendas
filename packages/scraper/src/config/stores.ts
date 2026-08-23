@@ -207,6 +207,16 @@ export const STORES: StoreAdapter[] = [
   createUnknownPlatformStore({ id: 'spdigital', label: 'SP Digital', host: 'www.spdigital.cl' }),
   createUnknownPlatformStore({ id: 'winpy', label: 'Winpy', host: 'www.winpy.cl' }),
 
+  // --- Supermercados y farmacias -------------------------------------------
+  // Aca viven los productos que se estan monitoreando: panales, desodorante,
+  // suplementos, aseo. Casi todos corren sobre VTEX, cuyo catalogo publico es
+  // la primera tecnica que prueba `createUnknownPlatformStore`.
+  createUnknownPlatformStore({ id: 'jumbo', label: 'Jumbo', host: 'www.jumbo.cl' }),
+  createUnknownPlatformStore({ id: 'santaisabel', label: 'Santa Isabel', host: 'www.santaisabel.cl' }),
+  createUnknownPlatformStore({ id: 'unimarc', label: 'Unimarc', host: 'www.unimarc.cl' }),
+  createUnknownPlatformStore({ id: 'salcobrand', label: 'Salcobrand', host: 'salcobrand.cl' }),
+  createUnknownPlatformStore({ id: 'ahumada', label: 'Farmacias Ahumada', host: 'www.farmaciasahumada.cl' }),
+
   fixtureAdapter,
 ];
 

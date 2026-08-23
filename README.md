@@ -308,6 +308,17 @@ Reporta código HTTP, si hay JSON-LD o estado embebido, en qué rutas del JSON
 están los productos, y la anatomía de una tarjeta: cuántos enlaces tiene, qué
 elementos llevan precio y cuáles son los candidatos a título.
 
+Para las tiendas que cargan por XHR (Líder, Ripley), volcar lo que pide la
+página deja ver la forma del JSON y el nombre de sus campos:
+
+```bash
+npm run diagnose -- --capture='https://www.lider.cl/search?query=panales'
+```
+
+Necesita Chromium (`npx playwright install --with-deps chromium`). Lista cada
+respuesta JSON capturada, cuántos productos saca el extractor genérico, y una
+muestra del primero que parezca producto para afinar el adaptador.
+
 > Las tiendas se consultan con una espera entre peticiones y sin paralelismo, a un
 > volumen comparable al de una persona navegando. Aun así, revisa los términos de
 > uso de cada sitio antes de subir la frecuencia del cron.
