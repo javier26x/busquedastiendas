@@ -305,10 +305,15 @@ export const STORES: StoreAdapter[] = [
     enabled: false,
   }),
   // Corre sobre Salesforce Commerce Cloud (el `.isml` del HTML lo delata).
+  // Agoto las siete estrategias: su buscador alterna 500 y 404 segun el
+  // termino, y con navegador renderiza sin pedir un solo JSON ni mostrar
+  // precios. Queda sin ninguna farmacia cubierta, asi que `maltofer` y
+  // `sterimar` no tienen hoy donde buscarse.
   createUnknownPlatformStore({
     id: 'ahumada',
     label: 'Farmacias Ahumada',
     host: 'www.farmaciasahumada.cl',
+    enabled: false,
     paths: (q) => [`https://www.farmaciasahumada.cl/search?q=${enc(q)}`],
   }),
 
