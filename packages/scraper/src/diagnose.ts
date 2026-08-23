@@ -423,12 +423,29 @@ function describePage(html: string): void {
   console.log(`Titulo: ${title || '(sin titulo)'}`);
   console.log(`Texto visible: ${texto.length} caracteres`);
 
+  // El dato que decide todo: si en la pagina hay precios, los productos si se
+  // renderizaron y lo que falla son los selectores. Si no hay ninguno, nunca
+  // llegaron y el problema esta antes.
+  const precios = texto.match(/\$\s?\d{1,3}(?:\.\d{3})+/g) ?? [];
+  console.log(`Precios en el texto: ${precios.length}`);
+
   if (LOCATION_GATE.test(texto)) {
     console.log('⚠ La pagina pide elegir tienda o comuna antes de mostrar precios.');
     console.log('  Sin eso no carga el catalogo, y por eso no pide ningun JSON de productos.');
   } else if (NO_RESULTS.test(texto)) {
     console.log('⚠ El buscador respondio que no hay resultados para ese termino.');
     console.log('  No es un fallo de lectura: prueba con un termino mas general.');
+  } else if (precios.length > 0) {
+    console.log('✅ Los productos SI estan en la pagina: es un problema de selectores.');
+    console.log('   Mira su maquetado con: npm run diagnose -- --store=<id> --dump=<selector>');
+
+    // El contexto alrededor del primer precio suele traer el titulo del
+    // producto, que es por donde empieza a escribirse el selector.
+    const at = texto.indexOf(precios[0] ?? '');
+    console.log(`   Alrededor del primer precio: …${texto.slice(Math.max(0, at - 120), at + 120)}…`);
+  } else {
+    console.log('⚠ La pagina cargo pero no muestra ni un precio.');
+    console.log('  Los productos nunca llegaron: no es un problema de lectura.');
   }
 
   console.log(`Primeras palabras: ${texto.slice(0, 240)}${texto.length > 240 ? '…' : ''}\n`);
