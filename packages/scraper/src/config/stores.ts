@@ -269,16 +269,25 @@ export const STORES: StoreAdapter[] = [
   // la primera tecnica que prueba `createUnknownPlatformStore`.
   // Las rutas van declaradas porque ya se verifico cual responde 200 en cada
   // una: sin esto la cadena gasta media docena de 404 antes de acertar.
+  // Jumbo y Santa Isabel (ambas Cencosud) renderizan su pagina de busqueda
+  // —titulo correcto, 15 mil caracteres de menu y pie— pero sin un solo precio
+  // y sin pedir ningun JSON de catalogo: las unicas peticiones son de cookies,
+  // publicidad y widgets de terceros. El catalogo nunca se solicita, asi que
+  // no hay nada que leer ni selector que corregir. Verificado con:
+  //   npm run diagnose -- --capture='https://www.jumbo.cl/busqueda?q=panales'
+  // Unimarc cubre las mismas busquedas de supermercado y si responde.
   createUnknownPlatformStore({
     id: 'jumbo',
     label: 'Jumbo',
     host: 'www.jumbo.cl',
+    enabled: false,
     paths: (q) => [`https://www.jumbo.cl/busqueda?q=${enc(q)}`],
   }),
   createUnknownPlatformStore({
     id: 'santaisabel',
     label: 'Santa Isabel',
     host: 'www.santaisabel.cl',
+    enabled: false,
     paths: (q) => [
       `https://www.santaisabel.cl/busqueda?q=${enc(q)}`,
       `https://www.santaisabel.cl/buscar?q=${enc(q)}`,
@@ -287,7 +296,14 @@ export const STORES: StoreAdapter[] = [
   // Adaptador propio: usa el mismo BFF que su buscador web, encontrado
   // capturando el XHR del navegador. Una peticion y sin HTML de por medio.
   createUnimarcAdapter(),
-  createUnknownPlatformStore({ id: 'salcobrand', label: 'Salcobrand', host: 'salcobrand.cl' }),
+  // Ninguna de las rutas candidatas responde: 404 en todas y fetch failed en
+  // el catalogo. No se encontro por donde entra su buscador.
+  createUnknownPlatformStore({
+    id: 'salcobrand',
+    label: 'Salcobrand',
+    host: 'salcobrand.cl',
+    enabled: false,
+  }),
   // Corre sobre Salesforce Commerce Cloud (el `.isml` del HTML lo delata).
   createUnknownPlatformStore({
     id: 'ahumada',

@@ -213,8 +213,8 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 | **PC Factory** | HTTP · API REST propia (`api.pcfactory.cl`) | ✅ |
 | **Hites** | Sondeo de las 6 técnicas | ✅ |
 | **Unimarc** | HTTP · su propio BFF (`POST /catalog/product/search`) | ✅ |
-| Jumbo, Santa Isabel | Navegador · captura del XHR | 🔄 responden, falta leerlas |
 | Ahumada | Sondeo de las 6 técnicas | 🔄 responde 200, sin XHR: todo en el HTML |
+| Jumbo, Santa Isabel | — | ⛔ renderizan sin precios y sin pedir catálogo |
 | Salcobrand | — | ⛔ ninguna ruta responde |
 | Paris, Easy, Ripley | Navegador · captura del XHR | 🔄 en prueba |
 | **Líder** | — | ⛔ PerimeterX |
