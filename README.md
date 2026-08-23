@@ -3,8 +3,8 @@
 Monitorea dos búsquedas en tiendas chilenas y las muestra en un panel web privado,
 ordenables por **precio**, **variación de precio** y **si están en oferta**.
 
-- **Búsquedas**: se administran desde el panel; arranca con `bodegas de jardín` y
-  `cajas organizadoras`.
+- **Búsquedas**: se administran desde el panel; la semilla trae `bodegas de jardín`,
+  `cajas organizadoras` y `Rexona Clinical`.
 - **Tiendas activas**: Falabella, Sodimac, IKEA y PC Factory (ver [estado de cada tienda](#estado-verificado-de-cada-tienda)).
 - **Acceso**: solo `javier.neo@gmail.com`, con Google Sign-In.
 - **Actualización**: dos veces al día vía GitHub Actions (gratis, sin plan Blaze).

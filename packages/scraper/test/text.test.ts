@@ -38,6 +38,20 @@ test('el filtro de bodegas de jardin descarta bodegas de vino y bodegaje', () =>
   assert.ok(!matchesRules('Set de herramientas para jardin', search.match), 'sin "bodega" no aplica');
 });
 
+test('el filtro de Rexona Clinical atrapa el spray y descarta el ruido', () => {
+  const search = getSearch('rexona-clinical');
+  assert.ok(search);
+
+  // El del screenshot y variantes que deberian entrar.
+  assert.ok(matchesRules('Desodorante Spray Rexona Men Clinical Pack 2X Hombre, 300 ml', search.match));
+  assert.ok(matchesRules('Rexona Clinical Roll On Antitranspirante 50 ml', search.match));
+
+  // Otros Rexona que no son la linea Clinical, y otros "clinical" que no son Rexona.
+  assert.ok(!matchesRules('Desodorante Rexona Men Xtra Cool 150 ml', search.match), 'sin "clinical" no aplica');
+  assert.ok(!matchesRules('Desodorante Dove Clinical Original 48h', search.match), 'sin "rexona" no aplica');
+  assert.ok(!matchesRules('Neceser Rexona Clinical de regalo', search.match), 'un neceser no es el producto');
+});
+
 test('el filtro de cajas organizadoras descarta cajas fuertes y de herramientas', () => {
   const search = getSearch('cajas-organizadoras');
   assert.ok(search);

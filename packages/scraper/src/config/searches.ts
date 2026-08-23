@@ -59,6 +59,20 @@ export const SEARCHES: SearchDefinition[] = [
     },
     enabled: true,
   },
+  {
+    id: 'rexona-clinical',
+    label: 'Rexona Clinical',
+    queries: ['desodorante rexona clinical', 'rexona men clinical'],
+    match: {
+      // El titulo tiene que nombrar la marca y la linea: asi no entra
+      // cualquier desodorante Rexona ni cualquier producto "clinical".
+      requireAll: [['rexona'], ['clinical']],
+      // Es un producto de supermercado, no de las tiendas de hogar. Se
+      // descartan repuestos, accesorios y el ruido de marketplace.
+      exclude: ['repuesto', 'estuche', 'neceser', 'bolso', 'toalla'],
+    },
+    enabled: true,
+  },
 ];
 
 /** Busca una definicion por id. */
