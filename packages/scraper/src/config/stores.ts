@@ -7,6 +7,7 @@ import { createDomCardsAdapter } from '../adapters/dom-cards.js';
 import { createBrowserAdapter } from '../adapters/browser.js';
 import { createPcFactoryAdapter } from '../adapters/pcfactory.js';
 import { createUnimarcAdapter } from '../adapters/unimarc.js';
+import { createSoloTodoAdapter } from '../adapters/solotodo.js';
 import { createShopifyAdapter, createWooCommerceAdapter } from '../adapters/platform.js';
 import { fixtureAdapter } from '../adapters/fixture.js';
 
@@ -149,12 +150,15 @@ export const STORES: StoreAdapter[] = [
   }),
 
   // --- Grupo Cencosud ------------------------------------------------------
-  // 403 a cualquier cliente HTTP. Con navegador la pagina carga, pero ni sus
-  // datos estructurados ni sus tarjetas eran reconocibles: la esperanza ahora
-  // es el JSON que pide por detras.
+  // Easy, Paris y Ripley no devolvieron un solo producto en ninguna corrida, y
+  // cada intento cuesta unos diez segundos de navegador. Ahora llegan por
+  // SoloTodo, que las cubre, asi que se apagan aqui: mantenerlas seria pagar
+  // el navegador dos veces para la misma tienda, o peor, guardar el mismo
+  // producto en dos documentos con historiales separados.
   createBrowserAdapter({
     id: 'easy',
     label: 'Easy',
+    enabled: false,
     base: 'https://www.easy.cl',
     buildUrls: (q) => [
       `https://www.easy.cl/search?q=${enc(q)}`,
@@ -168,6 +172,7 @@ export const STORES: StoreAdapter[] = [
   createBrowserAdapter({
     id: 'paris',
     label: 'Paris',
+    enabled: false,
     base: 'https://www.paris.cl',
     buildUrls: (q) => [`https://www.paris.cl/search/?q=${enc(q)}`],
     cardSelectors: ['[data-testid^="paris-vertical-pod"]', '[data-testid*="pod"]'],
@@ -186,6 +191,7 @@ export const STORES: StoreAdapter[] = [
   createBrowserAdapter({
     id: 'ripley',
     label: 'Ripley',
+    enabled: false,
     base: 'https://simple.ripley.cl',
     buildUrls: (q) => [
       `https://simple.ripley.cl/search/${enc(q)}`,
@@ -315,6 +321,31 @@ export const STORES: StoreAdapter[] = [
     host: 'www.farmaciasahumada.cl',
     enabled: false,
     paths: (q) => [`https://www.farmaciasahumada.cl/search?q=${enc(q)}`],
+  }),
+
+  // --- Agregador -----------------------------------------------------------
+  // SoloTodo no es una tienda: es el comparador chileno, y su API publica
+  // cubre las nueve que aqui resultaron inalcanzables. Se limita a esas
+  // adrede: Falabella, Sodimac, PC Factory, Hites y Unimarc ya se leen
+  // directo, y duplicarlas crearia dos documentos del mismo producto con
+  // historiales separados.
+  //
+  // Su catalogo es de tecnologia y electrohogar, asi que aporta en busquedas
+  // como "lavavajillas", "congelador vertical" o "SO-DIMM DDR5", y nada en
+  // las de supermercado o farmacia.
+  createSoloTodoAdapter({
+    onlyStores: [
+      'Lider',
+      'Paris',
+      'Ripley',
+      'Easy',
+      'Jumbo',
+      'Santa Isabel',
+      'La Polar',
+      'AbcDin',
+      'SP Digital',
+      'Winpy',
+    ],
   }),
 
   fixtureAdapter,

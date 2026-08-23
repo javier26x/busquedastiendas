@@ -5,8 +5,8 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 
 - **Búsquedas**: se administran desde el panel; la semilla trae `bodegas de jardín`,
   `cajas organizadoras` y `Rexona Clinical`.
-- **Tiendas que traen datos**: Falabella, Sodimac, IKEA, PC Factory, Hites y Unimarc
-  (ver [estado de cada tienda](#estado-verificado-de-cada-tienda)).
+- **Tiendas**: seis se leen directo (Falabella, Sodimac, IKEA, PC Factory, Hites, Unimarc)
+  y diez más llegan vía SoloTodo (ver [estado de cada tienda](#estado-verificado-de-cada-tienda)).
 - **Acceso**: solo `javier.neo@gmail.com`, con Google Sign-In.
 - **Actualización**: dos veces al día vía GitHub Actions (gratis, sin plan Blaze), o
   a demanda con el botón **↻ Actualizar ahora** del panel.
@@ -17,7 +17,7 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 GitHub Actions (cron 2×/día)
         │
         ▼
-   packages/scraper ──consulta──► Falabella · Sodimac · IKEA · PC Factory · Hites · Unimarc
+   packages/scraper ──consulta──► 6 tiendas directo + SoloTodo (10 más)
         │
         │ normaliza, filtra ruido, calcula variación y descuento
         ▼
@@ -102,7 +102,7 @@ firestore.rules           Quién lee, y lo único que el panel puede escribir.
 | `npm run diagnose -- --capture='URL'` | Vuelca el JSON que la página pide por XHR |
 | `npm run diagnose -- --capture='URL' --sample='ruta'` | Un producto entero de ese endpoint, y su petición |
 | `npm run diagnose -- --blocked` | ¿Los bloqueos dependen de la IP? |
-| `npm test` | Tests de la lógica pura (101 casos) |
+| `npm test` | Tests de la lógica pura (108 casos) |
 | `npm run typecheck` | TypeScript en ambos paquetes |
 | `npm run build` | Compila el panel a `packages/web/dist` |
 
@@ -213,11 +213,11 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 | **PC Factory** | HTTP · API REST propia (`api.pcfactory.cl`) | ✅ |
 | **Hites** | Sondeo de las 6 técnicas | ✅ |
 | **Unimarc** | HTTP · su propio BFF (`POST /catalog/product/search`) | ✅ |
+| **SoloTodo** | HTTP · API pública del comparador | ✅ trae 10 tiendas más |
 | Ahumada | Sondeo de las 6 técnicas | 🔄 responde 200, sin XHR: todo en el HTML |
 | Jumbo, Santa Isabel | — | ⛔ renderizan sin precios y sin pedir catálogo |
 | Salcobrand | — | ⛔ ninguna ruta responde |
-| Paris, Easy, Ripley | Navegador · captura del XHR | 🔄 en prueba |
-| **Líder** | — | ⛔ PerimeterX |
+| Líder, Paris, Easy, Ripley, La Polar, ABCDIN, SP Digital, Winpy, Jumbo, Santa Isabel | vía **SoloTodo** | ✅ inalcanzables directo |
 | SP Digital, Winpy | — | ⛔ muro anti-bot con 403, no es por IP |
 | La Polar, ABCDIN, Construmart, Imperial | — | ⛔ 200 pero sin productos reconocibles |
 | Corona | — | ⛔ no conecta |
