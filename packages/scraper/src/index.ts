@@ -8,7 +8,7 @@
  */
 import { SEARCHES } from './config/searches.js';
 import { resolveStores } from './config/stores.js';
-import { runScrape, buildSummary } from './pipeline/run.js';
+import { runScrape, buildSummary, DEFAULT_CONCURRENCY } from './pipeline/run.js';
 import {
   deleteOrphanProducts,
   markSearchesRun,
@@ -25,10 +25,17 @@ interface CliOptions {
   stores: string[] | null;
   searches: string[] | null;
   limit: number;
+  concurrency: number;
 }
 
 function parseArgs(argv: string[]): CliOptions {
-  const options: CliOptions = { dryRun: false, stores: null, searches: null, limit: 30 };
+  const options: CliOptions = {
+    dryRun: false,
+    stores: null,
+    searches: null,
+    limit: 30,
+    concurrency: DEFAULT_CONCURRENCY,
+  };
 
   for (const arg of argv) {
     if (arg === '--dry-run') {
@@ -40,6 +47,10 @@ function parseArgs(argv: string[]): CliOptions {
     } else if (arg.startsWith('--limit=')) {
       const value = Number.parseInt(arg.slice('--limit='.length), 10);
       if (Number.isFinite(value) && value > 0) options.limit = Math.min(value, 50);
+    } else if (arg.startsWith('--concurrency=')) {
+      const value = Number.parseInt(arg.slice('--concurrency='.length), 10);
+      // El techo evita que un dedo de mas abra doce Chromium a la vez.
+      if (Number.isFinite(value) && value > 0) options.concurrency = Math.min(value, 8);
     } else if (arg === '--help' || arg === '-h') {
       printHelp();
       process.exit(0);
@@ -59,6 +70,7 @@ Uso: npm run scrape -- [opciones]
   --stores=a,b        Solo estas tiendas (ids de config/stores.ts).
   --searches=a,b      Solo estas busquedas (ids de config/searches.ts).
   --limit=N           Resultados por consulta y tienda (por defecto 30, max 50).
+  --concurrency=N     Tiendas consultadas a la vez (por defecto ${DEFAULT_CONCURRENCY}, max 8). 1 = secuencial.
   --help              Esta ayuda.
 `);
 }
@@ -162,7 +174,8 @@ async function main(): Promise<void> {
 
   log(
     `Iniciando corrida: ${stores.length} tienda(s) [${stores.map((s) => s.id).join(', ')}], ` +
-      `${searches.length} busqueda(s) [${searches.map((s) => s.id).join(', ')}]` +
+      `${searches.length} busqueda(s) [${searches.map((s) => s.id).join(', ')}], ` +
+      `${options.concurrency} en paralelo` +
       (options.dryRun ? ' (dry-run)' : ''),
   );
 
@@ -171,6 +184,7 @@ async function main(): Promise<void> {
     searches,
     limit: options.limit,
     dryRun: options.dryRun,
+    concurrency: options.concurrency,
     log,
   });
 
@@ -222,6 +236,7 @@ async function main(): Promise<void> {
     new Date(),
   );
   await saveRunSummary(db, summary);
+
 
   log(
     `Guardado: ${stats.created} nuevos, ${stats.updated} actualizados, ` +
