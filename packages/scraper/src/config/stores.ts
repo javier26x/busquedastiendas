@@ -212,8 +212,14 @@ export const STORES: StoreAdapter[] = [
     buildUrls: (q) => [`https://www.lider.cl/search?query=${enc(q)}`],
     settleMs: 2500,
   }),
-  // Responden 200 pero ninguna de las seis tecnicas les reconocio un producto,
-  // y ademas son de construccion: no venden nada de lo que se monitorea.
+  // Construmart corre sobre Magento y deja su GraphQL abierto: `POST /graphql`
+  // con `{products(search:"...")}` devuelve el catalogo entero, con nombre,
+  // SKU, imagen y stock. Lo que no devuelve es el precio: viene en 0 para
+  // todos los productos, porque los cobra por zona y el indice no lo guarda.
+  // Un catalogo sin precio no sirve para monitorear precios, asi que queda
+  // apagada; no es un bloqueo y se reactiva sola el dia que publiquen el
+  // monto. Por lo mismo no se agrego Magento a la cadena de estrategias: no
+  // hay ninguna tienda con la que comprobar que el precio se lee bien.
   createUnknownPlatformStore({
     id: 'construmart',
     label: 'Construmart',
@@ -232,19 +238,20 @@ export const STORES: StoreAdapter[] = [
   // sondea las seis tecnicas y el log de la primera corrida dice cual sirvio.
   // Si alguna queda en rojo, apagarla es poner `enabled: false` en su bloque.
   createUnknownPlatformStore({ id: 'hites', label: 'Hites', host: 'www.hites.com' }),
-  // La Polar y ABCDIN son el mismo sitio tras la fusion: responden 200 pero
-  // ninguna tecnica les saca un producto (SPA con todo tras el muro).
-  createUnknownPlatformStore({
-    id: 'lapolar',
-    label: 'La Polar',
-    host: 'www.lapolar.cl',
-    enabled: false,
-  }),
-  createUnknownPlatformStore({
-    id: 'abcdin',
-    label: 'ABCDIN',
-    host: 'www.abcdin.cl',
-    enabled: false,
+  // La Polar y ABCDIN se fusionaron en ABC y sus dominios viejos redirigen
+  // ahi. La redireccion se come el termino buscado y deja al visitante en la
+  // portada, que es lo que hacia ver un 200 "sin productos reconocibles": no
+  // habia ninguno porque nunca se llego a buscar. Solo `/Busqueda/` responde
+  // con resultados; el resto de las rutas plausibles caen igual en la portada,
+  // asi que no se declaran como candidatas: devolverian 200 y cero productos.
+  //
+  // Corre sobre Salesforce Commerce Cloud, que no publica JSON-LD: cada ficha
+  // viene con microdatos schema.org y su copia para GTM al lado.
+  createHtmlSearchAdapter({
+    id: 'abc',
+    label: 'ABC',
+    base: 'https://www.abc.cl',
+    buildUrls: (q) => [`https://www.abc.cl/Busqueda/?q=${enc(q)}`],
   }),
   // No resuelve ni conecta desde ninguna de las dos IP probadas.
   createUnknownPlatformStore({
@@ -325,10 +332,10 @@ export const STORES: StoreAdapter[] = [
 
   // --- Agregador -----------------------------------------------------------
   // SoloTodo no es una tienda: es el comparador chileno, y su API publica
-  // cubre las nueve que aqui resultaron inalcanzables. Se limita a esas
-  // adrede: Falabella, Sodimac, PC Factory, Hites y Unimarc ya se leen
-  // directo, y duplicarlas crearia dos documentos del mismo producto con
-  // historiales separados.
+  // cubre las que aqui resultaron inalcanzables. Se limita a esas adrede:
+  // Falabella, Sodimac, PC Factory, Hites, Unimarc y ABC ya se leen directo,
+  // y duplicarlas crearia dos documentos del mismo producto con historiales
+  // separados.
   //
   // Su catalogo es de tecnologia y electrohogar, asi que aporta en busquedas
   // como "lavavajillas", "congelador vertical" o "SO-DIMM DDR5", y nada en
@@ -341,8 +348,8 @@ export const STORES: StoreAdapter[] = [
       'Easy',
       'Jumbo',
       'Santa Isabel',
-      'La Polar',
-      'AbcDin',
+      // La Polar y AbcDin salieron de la lista al pasar a leerse directo
+      // como `abc`: ahi estaban por inalcanzables, y ya no lo son.
       'SP Digital',
       'Winpy',
     ],

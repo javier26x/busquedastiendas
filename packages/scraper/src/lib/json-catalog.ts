@@ -44,6 +44,20 @@ export interface JsonCatalogOptions {
   buildProductUrl?: (node: Record<string, unknown>, id: string) => string | null;
 }
 
+/**
+ * Precios que exigen pagar de cierta forma o ser cliente de un banco.
+ *
+ * Casi siempre son mas bajos que el normal, asi que tomarlos como precio del
+ * producto prometeria una rebaja que no obtiene cualquiera. Se exporta porque
+ * la misma distincion aparece en el HTML de las tiendas, no solo en su JSON.
+ *
+ * Hay dos nombres propios en la lista, y no sobran: varias tiendas etiquetan
+ * el precio de su tarjeta con la marca y no con el medio de pago ("Precio
+ * Falabella", "CMR").
+ */
+export const CONDITIONAL_PRICE =
+  /efectivo|debito|credito|banco|tarjeta|cmr|falabella|socio|puntos|cuota/i;
+
 const DEFAULTS = {
   nameKeys: [
     'nombre',
@@ -101,13 +115,7 @@ const DEFAULTS = {
   stockKeys: ['stock', 'stockTotal', 'stockDisponible', 'disponible', 'tieneStock', 'available'],
   offerKeys: ['promocion', 'enPromocion', 'on_sale', 'isOffer', 'oferta'],
   priceContainers: ['precio', 'price', 'prices', 'pricing', 'variants', 'items', 'offers'],
-  /**
-   * Precios que exigen pagar de cierta forma o ser cliente de un banco.
-   *
-   * Casi siempre son mas bajos que el normal, asi que tomarlos como precio del
-   * producto prometeria una rebaja que no obtiene cualquiera.
-   */
-  conditionalPrice: /efectivo|debito|credito|banco|tarjeta|cmr|socio|puntos|cuota/i,
+  conditionalPrice: CONDITIONAL_PRICE,
 } as const;
 
 /** Profundidad maxima al recorrer el JSON, por si viene muy anidado. */

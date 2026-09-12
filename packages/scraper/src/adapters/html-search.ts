@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import type { AdapterContext, RawOffer, StoreAdapter } from '../types.js';
 import { fetchHtml } from '../lib/http.js';
 import { parseClp } from '../lib/money.js';
+import { CONDITIONAL_PRICE } from '../lib/json-catalog.js';
 import { absoluteUrl, truncate } from '../lib/text.js';
 
 /**
@@ -9,8 +10,9 @@ import { absoluteUrl, truncate } from '../lib/text.js';
  *
  * En vez de depender de selectores CSS (que cambian con cada rediseno) lee
  * los datos estructurados que las tiendas ya publican para Google:
- *   1. bloques JSON-LD (`schema.org/Product`), y
- *   2. el estado embebido de la SPA (`__NEXT_DATA__`, `__PRELOADED_STATE__`).
+ *   1. bloques JSON-LD (`schema.org/Product`),
+ *   2. el estado embebido de la SPA (`__NEXT_DATA__`, `__PRELOADED_STATE__`), y
+ *   3. microdatos schema.org sobre el propio HTML (`itemscope`/`itemprop`).
  *
  * Es best-effort: si la tienda cambia su estructura el adaptador devuelve
  * cero resultados y el runner lo reporta como fallo de esa tienda sin
@@ -120,7 +122,13 @@ export function extractStructuredOffers(
 ): RawOffer[] {
   const fromJsonLd = extractFromJsonLd($, base);
   if (fromJsonLd.length > 0) return fromJsonLd;
-  return extractFromEmbeddedState($, base, options);
+
+  const fromState = extractFromEmbeddedState($, base, options);
+  if (fromState.length > 0) return fromState;
+
+  // Ultimo de los tres porque es el que mas depende del maquetado: el precio
+  // no siempre viene declarado como `itemprop` y hay que buscarlo en la ficha.
+  return extractFromMicrodata($, base);
 }
 
 /* ------------------------------------------------------------------ */
@@ -343,15 +351,6 @@ function extractStatePrice(node: Record<string, unknown>): number | null {
   return values.length > 0 ? Math.min(...values) : null;
 }
 
-/**
- * Precios que exigen un medio de pago concreto.
- *
- * Falabella y Sodimac publican junto al precio normal el de su tarjeta CMR,
- * que casi siempre es el mas bajo. Tomarlo como precio efectivo mostraria
- * uno que no paga quien no tiene esa tarjeta.
- */
-const CONDITIONAL_PRICE = /cmr|tarjeta|falabella|socio|puntos/i;
-
 /** Precios de un nodo, en pesos, sin los condicionados a un medio de pago. */
 function priceValues(node: Record<string, unknown>): number[] {
   const prices = node['prices'];
@@ -435,6 +434,207 @@ function collectListPrice(node: Record<string, unknown>): number | null {
   // Con varios precios (internet / normal / tarjeta) el mayor es el normal.
   const values = priceValues(node);
   return values.length > 1 ? Math.max(...values) : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* Microdatos schema.org                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Tercera via de datos estructurados, y la que usan las tiendas montadas
+ * sobre Salesforce Commerce Cloud (ABC, donde se fusionaron La Polar y
+ * ABCDIN): no publican JSON-LD ni dejan estado de SPA, pero cada ficha viene
+ * marcada con `itemscope itemtype="schema.org/Product"`.
+ *
+ * Los microdatos son el mismo vocabulario que el JSON-LD, escrito sobre el
+ * HTML en vez de en un bloque aparte, asi que son igual de estables: existen
+ * para que Google los lea y la tienda no los rompe alegremente.
+ *
+ * El punto flojo es el precio. `itemprop="price"` es opcional y estas tiendas
+ * no lo ponen: lo dejan en el nodo que pinta el monto, con su etiqueta al
+ * lado ("Internet", "Normal", "Tarjeta ABC"). Por eso se busca ahi, y esa
+ * etiqueta es justo lo que permite descartar el precio que exige una tarjeta.
+ */
+const PRODUCT_MICRODATA = '[itemscope][itemtype*="schema.org/Product" i]';
+
+/** Marcas de agotado que las fichas muestran como texto. */
+const OUT_OF_STOCK = /sin stock|agotado|no disponible|out of stock/i;
+
+type Tile = cheerio.Cheerio<never>;
+
+function extractFromMicrodata($: cheerio.CheerioAPI, base: string): RawOffer[] {
+  const offers: RawOffer[] = [];
+
+  $(PRODUCT_MICRODATA).each((_i, element) => {
+    const tile = $(element) as unknown as Tile;
+
+    // Un Product dentro de otro es una variante de la misma ficha, no una
+    // segunda: contarla duplicaria el producto con otro precio.
+    if (tile.parents(PRODUCT_MICRODATA).length > 0) return;
+
+    const offer = microdataToOffer($, tile, base);
+    if (offer) offers.push(offer);
+  });
+
+  return dedupe(offers);
+}
+
+function microdataToOffer($: cheerio.CheerioAPI, tile: Tile, base: string): RawOffer | null {
+  const analytics = gtmProduct($, tile);
+
+  const title = itemprop($, tile, 'name') ?? asString(analytics?.['name']);
+  if (!title) return null;
+
+  const url = absoluteUrl(itemprop($, tile, 'url'), base);
+  if (!url) return null;
+
+  const prices = tilePrices($, tile, analytics);
+  if (prices.price === null) return null;
+
+  const externalId =
+    asString(tile.attr('data-pid')) ??
+    asString(tile.find('[data-pid]').first().attr('data-pid')) ??
+    asString(analytics?.['id']) ??
+    urlFingerprint(url);
+
+  return {
+    externalId,
+    title: truncate(title),
+    url,
+    image: absoluteUrl(itemprop($, tile, 'image'), base),
+    brand: itemprop($, tile, 'brand') ?? asString(analytics?.['brand']),
+    price: prices.price,
+    listPrice: prices.listPrice,
+    currency: 'CLP',
+    available: !OUT_OF_STOCK.test(tile.text()),
+  };
+}
+
+/**
+ * Lee un `itemprop`, que segun el elemento vive en un atributo distinto.
+ *
+ * La especificacion lo define asi: `content` en un `<meta>`, `href` en un
+ * enlace, `src` en una imagen, y el texto en cualquier otro. Leer solo el
+ * texto devolveria vacio justo en los que mas importan.
+ */
+function itemprop($: cheerio.CheerioAPI, tile: Tile, name: string): string | null {
+  const node = tile.find(`[itemprop="${name}"]`).first();
+  if (node.length === 0) return null;
+
+  const tag = String(node.prop('tagName') ?? '').toLowerCase();
+
+  const attr =
+    asString(node.attr('content')) ??
+    (tag === 'a' || tag === 'link' ? asString(node.attr('href')) : null) ??
+    (tag === 'img' ? (asString(node.attr('src')) ?? asString(node.attr('data-src'))) : null);
+
+  if (attr) return attr;
+  return asString(node.text());
+}
+
+/**
+ * El producto tal como la ficha se lo cuenta a Google Tag Manager.
+ *
+ * Estas tiendas dejan en `data-gtm` el nombre, el id, la marca y el precio ya
+ * separados, que es exactamente lo que hace falta. Es dato de analitica y no
+ * de maquetado, asi que sobrevive a los redisenos; se usa para completar lo
+ * que los microdatos no declaran.
+ */
+function gtmProduct($: cheerio.CheerioAPI, tile: Tile): Record<string, unknown> | null {
+  const nodes: Tile[] = [
+    tile,
+    ...tile
+      .find('[data-gtm], [data-gtm-click]')
+      .toArray()
+      .map((element) => $(element) as unknown as Tile),
+  ];
+
+  for (const node of nodes) {
+    for (const attribute of ['data-gtm', 'data-gtm-click']) {
+      const raw = node.attr(attribute);
+      if (!raw) continue;
+
+      const product = firstGtmProduct(safeParse(raw));
+      if (product) return product;
+    }
+  }
+
+  return null;
+}
+
+/** Busca el objeto de producto dentro del `ecommerce` de GTM. */
+function firstGtmProduct(value: unknown, depth = 0): Record<string, unknown> | null {
+  if (depth > 6 || value === null || typeof value !== 'object') return null;
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const found = firstGtmProduct(entry, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const node = value as Record<string, unknown>;
+  // Un producto de GTM se reconoce por traer nombre y precio juntos.
+  if (asString(node['name']) && node['price'] !== undefined) return node;
+
+  for (const child of Object.values(node)) {
+    const found = firstGtmProduct(child, depth + 1);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+interface TilePrices {
+  price: number | null;
+  listPrice: number | null;
+}
+
+/**
+ * Precio vigente y precio normal de una ficha.
+ *
+ * Se toma el menor de los precios incondicionales como vigente y el mayor
+ * como normal tachado. Los que exigen una tarjeta o un medio de pago se
+ * descartan antes: son mas baratos, y tomarlos prometeria una rebaja que no
+ * obtiene cualquiera (la misma regla que en el catalogo JSON).
+ */
+function tilePrices(
+  $: cheerio.CheerioAPI,
+  tile: Tile,
+  analytics: Record<string, unknown> | null,
+): TilePrices {
+  const values: number[] = [];
+
+  tile.find('[data-value]').each((_i, element) => {
+    const node = $(element);
+    const parent = node.parent();
+
+    // Se exige que el nodo se declare como precio: hay `data-value` en
+    // filtros y contadores, y un numero suelto no es un precio.
+    const context = `${node.attr('class') ?? ''} ${parent.attr('class') ?? ''}`;
+    if (!/price|precio/i.test(context)) return;
+
+    // La etiqueta vecina ("Normal", "Tarjeta ABC") viaja en el texto del
+    // contenedor: es lo que distingue el precio de todos del de socios.
+    if (CONDITIONAL_PRICE.test(`${context} ${parent.text()}`)) return;
+
+    const value = parseClp(node.attr('data-value'));
+    if (value !== null) values.push(value);
+  });
+
+  const declared = parseClp(itemprop($, tile, 'price'));
+  if (declared !== null) values.push(declared);
+
+  if (values.length === 0) {
+    // Sin monto en el HTML queda lo que la ficha le reporta a GTM.
+    return { price: parseClp(asString(analytics?.['price'])), listPrice: null };
+  }
+
+  const price = Math.min(...values);
+  const highest = Math.max(...values);
+
+  return { price, listPrice: highest > price ? highest : null };
 }
 
 /* ------------------------------------------------------------------ */
