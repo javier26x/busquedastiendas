@@ -68,6 +68,11 @@ export function Dashboard(): ReactNode {
     return search && search.lastRunAt === null ? search : null;
   }, [filters.searchId, searches.data]);
 
+  const activeSearchLabel = useMemo(
+    () => searches.data.find((entry) => entry.id === filters.searchId)?.label ?? null,
+    [filters.searchId, searches.data],
+  );
+
   // Las pausadas se administran pero no ocupan una pestana.
   const searchTabs = useMemo(
     () =>
@@ -152,6 +157,8 @@ export function Dashboard(): ReactNode {
           stores={stores}
           resultCount={visible.length}
           totalCount={inSearch.length}
+          visible={visible}
+          searchLabel={activeSearchLabel}
         />
 
         {products.loading ? (

@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
 import { DEFAULT_FILTERS, SORT_OPTIONS, type Filters, type SortKey } from '../lib/sort.js';
+import type { Product } from '../types.js';
+import { csvFilename, downloadCsv, toCsv } from '../lib/csv.js';
 
 interface Props {
   filters: Filters;
@@ -9,6 +11,10 @@ interface Props {
   stores: { id: string; label: string; count: number }[];
   resultCount: number;
   totalCount: number;
+  /** Lo que la tabla esta mostrando, para poder exportarlo tal cual. */
+  visible: Product[];
+  /** Nombre de la busqueda activa; solo se usa para el nombre del archivo. */
+  searchLabel: string | null;
 }
 
 export function FiltersBar({
@@ -19,6 +25,8 @@ export function FiltersBar({
   stores,
   resultCount,
   totalCount,
+  visible,
+  searchLabel,
 }: Props): ReactNode {
   const activeSort = SORT_OPTIONS.find((option) => option.key === sortKey);
 
@@ -35,6 +43,7 @@ export function FiltersBar({
     filters.storeIds.length > 0 ||
     filters.onlyOffers ||
     filters.onlyDrops ||
+    filters.onlyHistoricLows ||
     filters.onlyAvailable ||
     filters.query.trim() !== '';
 
@@ -104,6 +113,13 @@ export function FiltersBar({
             onChange={(checked) => onFiltersChange((prev) => ({ ...prev, onlyDrops: checked }))}
           />
           <Toggle
+            label="Solo en su minimo"
+            checked={filters.onlyHistoricLows}
+            onChange={(checked) =>
+              onFiltersChange((prev) => ({ ...prev, onlyHistoricLows: checked }))
+            }
+          />
+          <Toggle
             label="Solo disponibles"
             checked={filters.onlyAvailable}
             onChange={(checked) => onFiltersChange((prev) => ({ ...prev, onlyAvailable: checked }))}
@@ -115,17 +131,28 @@ export function FiltersBar({
         <span className="muted small">
           Mostrando <strong>{resultCount}</strong> de {totalCount} productos
         </span>
-        {hasActiveFilters && (
+        <div className="filters__actions">
+          {hasActiveFilters && (
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              onClick={() =>
+                onFiltersChange((prev) => ({ ...DEFAULT_FILTERS, searchId: prev.searchId }))
+              }
+            >
+              Limpiar filtros
+            </button>
+          )}
           <button
             type="button"
             className="btn btn--ghost btn--sm"
-            onClick={() =>
-              onFiltersChange((prev) => ({ ...DEFAULT_FILTERS, searchId: prev.searchId }))
-            }
+            disabled={visible.length === 0}
+            title="Descarga lo que se esta mostrando, con sus filtros y su orden"
+            onClick={() => downloadCsv(toCsv(visible), csvFilename(searchLabel))}
           >
-            Limpiar filtros
+            Exportar CSV
           </button>
-        )}
+        </div>
       </div>
     </section>
   );

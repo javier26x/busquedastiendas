@@ -248,6 +248,16 @@ code {
   outline-offset: 2px;
 }
 
+/* Lo usan "Actualizar ahora" mientras corre y "Exportar CSV" sin filas. */
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn:disabled:hover {
+  background: var(--surface);
+}
+
 .btn--primary {
   background: var(--accent);
   border-color: var(--accent);
@@ -463,6 +473,10 @@ code {
   color: var(--offer);
 }
 
+.stat__value--low {
+  color: var(--down);
+}
+
 .stat__detail {
   font-size: 0.8rem;
   color: var(--text-muted);
@@ -490,6 +504,12 @@ code {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+}
+
+.filters__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .filters__footer {
@@ -774,6 +794,11 @@ code {
 .badge--muted {
   background: var(--surface-2);
   color: var(--text-muted);
+}
+
+.badge--low {
+  background: var(--down-bg);
+  color: var(--down);
 }
 
 .empty {

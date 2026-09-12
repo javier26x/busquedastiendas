@@ -18,6 +18,12 @@ export function StatsBar({ stats }: { stats: Stats }): ReactNode {
         tone={stats.rises > 0 ? 'up' : undefined}
       />
       <StatCard
+        label="En su minimo"
+        value={String(stats.historicLows)}
+        detail="precio mas bajo visto"
+        tone={stats.historicLows > 0 ? 'low' : undefined}
+      />
+      <StatCard
         label="Mas barato"
         value={formatPrice(stats.cheapest?.price)}
         detail={stats.cheapest?.storeLabel}
@@ -41,7 +47,7 @@ function StatCard({
   label: string;
   value: string;
   detail?: string | undefined;
-  tone?: 'up' | 'down' | 'offer' | undefined;
+  tone?: 'up' | 'down' | 'offer' | 'low' | undefined;
 }): ReactNode {
   return (
     <div className="stat">

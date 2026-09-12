@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Product } from '../types.js';
-import type { SortKey } from '../lib/sort.js';
+import { isAtHistoricLow, type SortKey } from '../lib/sort.js';
 import {
   formatDelta,
   formatPercent,
@@ -20,6 +20,7 @@ interface Props {
 /** Que columna resaltar segun el orden elegido. */
 function highlightedColumn(sortKey: SortKey): 'precio' | 'variacion' | 'oferta' | null {
   if (sortKey === 'precio-asc' || sortKey === 'precio-desc') return 'precio';
+  if (sortKey === 'minimo-historico') return 'precio';
   if (sortKey === 'variacion-baja' || sortKey === 'variacion-alza') return 'variacion';
   if (sortKey === 'oferta' || sortKey === 'descuento-desc') return 'oferta';
   return null;
@@ -125,6 +126,14 @@ function Row({
           <span className="price__current">{formatPrice(product.price)}</span>
           {product.listPrice !== null && (
             <span className="price__list">{formatPrice(product.listPrice)}</span>
+          )}
+          {isAtHistoricLow(product) && (
+            <span
+              className="badge badge--low"
+              title={`Lo mas bajo que se le ha visto. Llego a ${formatPrice(product.maxPrice)}.`}
+            >
+              Minimo historico
+            </span>
           )}
         </div>
       </td>

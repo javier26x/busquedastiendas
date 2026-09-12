@@ -11,6 +11,7 @@ import type { Product } from '../types.js';
  */
 
 export type SortKey =
+  | 'minimo-historico'
   | 'precio-asc'
   | 'precio-desc'
   | 'variacion-baja'
@@ -27,6 +28,11 @@ export interface SortOption {
 }
 
 export const SORT_OPTIONS: SortOption[] = [
+  {
+    key: 'minimo-historico',
+    label: 'En su minimo historico',
+    hint: 'Los que hoy estan al precio mas bajo que se les ha visto',
+  },
   { key: 'precio-asc', label: 'Precio: menor a mayor', hint: 'Lo mas barato primero' },
   { key: 'precio-desc', label: 'Precio: mayor a menor', hint: 'Lo mas caro primero' },
   { key: 'variacion-baja', label: 'Variacion: mayores bajas', hint: 'Lo que mas bajo de precio' },
@@ -36,6 +42,20 @@ export const SORT_OPTIONS: SortOption[] = [
   { key: 'actualizado-desc', label: 'Actualizado recientemente', hint: 'Ultimo avistamiento' },
 ];
 
+/**
+ * Si el producto esta hoy en el precio mas bajo que se le ha visto.
+ *
+ * Es la pregunta que uno le hace a un monitor de precios —¿conviene comprar
+ * ahora?— y el dato ya estaba guardado en `minPrice` sin que nada lo mostrara.
+ *
+ * Se exige que el precio haya variado alguna vez: un producto observado
+ * siempre al mismo valor esta trivialmente en su minimo, y marcarlo diria
+ * "aprovecha" de todo el catalogo el primer dia.
+ */
+export function isAtHistoricLow(product: Product): boolean {
+  return product.maxPrice > product.minPrice && product.price <= product.minPrice;
+}
+
 export interface Filters {
   /** Id de busqueda, o `null` para todas. */
   searchId: string | null;
@@ -44,6 +64,8 @@ export interface Filters {
   onlyOffers: boolean;
   /** Solo productos cuyo ultimo cambio de precio fue una baja. */
   onlyDrops: boolean;
+  /** Solo productos que hoy estan en su minimo historico. */
+  onlyHistoricLows: boolean;
   onlyAvailable: boolean;
   /** Texto libre sobre titulo y marca. */
   query: string;
@@ -54,6 +76,7 @@ export const DEFAULT_FILTERS: Filters = {
   storeIds: [],
   onlyOffers: false,
   onlyDrops: false,
+  onlyHistoricLows: false,
   onlyAvailable: false,
   query: '',
 };
@@ -76,6 +99,7 @@ export function filterProducts(products: Product[], filters: Filters): Product[]
     if (filters.onlyOffers && !product.isOffer) return false;
     if (filters.onlyAvailable && !product.available) return false;
     if (filters.onlyDrops && !(product.priceChange !== null && product.priceChange < 0)) return false;
+    if (filters.onlyHistoricLows && !isAtHistoricLow(product)) return false;
 
     if (needle) {
       const haystack = normalize(`${product.title} ${product.brand ?? ''} ${product.storeLabel}`);
@@ -106,6 +130,15 @@ export function sortProducts(products: Product[], sortKey: SortKey): Product[] {
 
   sorted.sort((a, b) => {
     switch (sortKey) {
+      case 'minimo-historico': {
+        const aLow = isAtHistoricLow(a);
+        const bLow = isAtHistoricLow(b);
+        if (aLow !== bLow) return aLow ? -1 : 1;
+        // Entre los que estan en su minimo, primero el que mas cayo desde su
+        // techo: es la mejor ocasion, no solo la mas barata.
+        return discountFromPeak(b) - discountFromPeak(a) || a.price - b.price;
+      }
+
       case 'precio-asc':
         return a.price - b.price;
 
@@ -138,11 +171,19 @@ export function sortProducts(products: Product[], sortKey: SortKey): Product[] {
   return sorted;
 }
 
+/** Cuanto bajo respecto al precio mas alto observado, entre 0 y 1. */
+function discountFromPeak(product: Product): number {
+  if (product.maxPrice <= 0) return 0;
+  return (product.maxPrice - product.price) / product.maxPrice;
+}
+
 export interface Stats {
   total: number;
   offers: number;
   drops: number;
   rises: number;
+  /** Cuantos estan hoy en el precio mas bajo que se les ha visto. */
+  historicLows: number;
   cheapest: Product | null;
   biggestDrop: Product | null;
 }
@@ -152,11 +193,13 @@ export function computeStats(products: Product[]): Stats {
   let offers = 0;
   let drops = 0;
   let rises = 0;
+  let historicLows = 0;
   let cheapest: Product | null = null;
   let biggestDrop: Product | null = null;
 
   for (const product of products) {
     if (product.isOffer) offers += 1;
+    if (isAtHistoricLow(product)) historicLows += 1;
 
     if (product.priceChange !== null && product.priceChange < 0) {
       drops += 1;
@@ -173,7 +216,7 @@ export function computeStats(products: Product[]): Stats {
     if (cheapest === null || product.price < cheapest.price) cheapest = product;
   }
 
-  return { total: products.length, offers, drops, rises, cheapest, biggestDrop };
+  return { total: products.length, offers, drops, rises, historicLows, cheapest, biggestDrop };
 }
 
 /** Lista de tiendas presentes, para armar el filtro. */
