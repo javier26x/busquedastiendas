@@ -15,6 +15,12 @@ import {
   persistOffers,
   saveRunSummary,
 } from './pipeline/persist.js';
+import {
+  decideOrphanScan,
+  pruneRuns,
+  readOrphanScanState,
+  writeOrphanScanState,
+} from './pipeline/retention.js';
 import { getDb } from './firestore/client.js';
 import { bootstrapSearches, loadSearches } from './firestore/searches.js';
 import { closeBrowser } from './lib/browser.js';
@@ -226,8 +232,27 @@ async function main(): Promise<void> {
     new Set(result.completedSearchIds),
   );
 
-  const orphans = await deleteOrphanProducts(db);
-  if (orphans > 0) log(`Borrados ${orphans} productos que ya no pertenecen a ninguna busqueda`);
+  // El barrido de huerfanos lee `products` entero, asi que solo se hace
+  // cuando pudo aparecer alguno: un producto se queda sin etiquetas unicamente
+  // si el panel borro una busqueda.
+  const knownSearchIds = source.stored ? source.searches.map((search) => search.id) : [];
+  const previousScan = source.stored ? await readOrphanScanState(db) : null;
+  const decision = decideOrphanScan(previousScan, knownSearchIds, now);
+
+  if (decision.scan) {
+    const orphans = await deleteOrphanProducts(db);
+    log(
+      orphans > 0
+        ? `Borrados ${orphans} productos que ya no pertenecen a ninguna busqueda (${decision.reason})`
+        : `Sin productos huerfanos (${decision.reason})`,
+    );
+  } else {
+    log(`Se omite el barrido de huerfanos: ${decision.reason}`);
+  }
+
+  if (source.stored) {
+    await writeOrphanScanState(db, knownSearchIds, decision.scan ? now : null, previousScan);
+  }
 
   const summary = buildSummary(
     result,
@@ -237,6 +262,10 @@ async function main(): Promise<void> {
   );
   await saveRunSummary(db, summary);
 
+  // La coleccion suma un documento por corrida y nadie la borra: sin esto
+  // crece para siempre a cambio de un historial que nunca se mira entero.
+  const prunedRuns = await pruneRuns(db);
+  if (prunedRuns > 0) log(`Podadas ${prunedRuns} corridas antiguas`);
 
   log(
     `Guardado: ${stats.created} nuevos, ${stats.updated} actualizados, ` +
