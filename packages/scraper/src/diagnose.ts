@@ -154,8 +154,8 @@ const BLOCKED: { id: string; label: string; enActions: string; url: string }[] =
   { id: 'spdigital', label: 'SP Digital', enActions: 'HTTP 403', url: 'https://www.spdigital.cl/search?q=notebook' },
   { id: 'winpy', label: 'Winpy', enActions: 'HTTP 403', url: 'https://www.winpy.cl/search?q=notebook' },
   { id: 'corona', label: 'Corona', enActions: 'fetch failed', url: 'https://www.corona.cl/search?q=toalla' },
-  { id: 'lapolar', label: 'La Polar', enActions: 'HTML en vez de JSON', url: 'https://www.lapolar.cl/search?q=panales' },
-  { id: 'abcdin', label: 'ABCDIN', enActions: 'HTML en vez de JSON', url: 'https://www.abcdin.cl/search?q=notebook' },
+  // La Polar y ABCDIN salieron de esta lista: no estaban bloqueadas, sus
+  // dominios redirigian a la portada de abc.cl perdiendo el termino buscado.
   { id: 'imperial', label: 'Imperial', enActions: 'HTTP 404 / sin datos', url: 'https://www.imperial.cl/search?q=madera' },
   { id: 'construmart', label: 'Construmart', enActions: 'HTTP 404', url: 'https://www.construmart.cl/catalogsearch/result/?q=cemento' },
   // Estas cargaron bien (200) y el navegador las renderizo: su problema NO es
@@ -176,6 +176,60 @@ const BLOCK_PAGE = /captcha|are you a robot|access denied|forbidden|incapsula|cl
  * mismo cliente y las mismas cabeceras que la corrida real, asi lo unico que
  * cambia es desde donde sale la peticion.
  */
+/**
+ * Como termino una peticion de sondeo.
+ *
+ * La distincion importa: solo `sin-red` habla de esta maquina. Un 403 o un
+ * 404 llegaron hasta la tienda y responden por ella, no por la conexion.
+ */
+type Desenlace = 'ok' | 'bloqueo' | 'ruta' | 'sin-red';
+
+interface Resultado {
+  entry: (typeof BLOCKED)[number];
+  desenlace: Desenlace;
+  /** Texto para la tabla. */
+  detalle: string;
+}
+
+async function sondear(
+  entry: (typeof BLOCKED)[number],
+  fetchHtml: (url: string, options: Record<string, unknown>) => Promise<string>,
+  HttpError: new (...args: never[]) => Error & { status: number },
+): Promise<Resultado> {
+  try {
+    const html = await fetchHtml(entry.url, { retries: 0, timeoutMs: 20_000 });
+
+    if (BLOCK_PAGE.test(html.slice(0, 4000))) {
+      return {
+        entry,
+        desenlace: 'bloqueo',
+        detalle: `200 pero es un muro anti-bot (${html.length} bytes)`,
+      };
+    }
+
+    return { entry, desenlace: 'ok', detalle: `200 OK (${html.length} bytes)` };
+  } catch (error) {
+    if (error instanceof HttpError) {
+      const status = error.status;
+      // Un 404 o un 410 significan que la peticion llego y la tienda contesto
+      // que ahi ya no hay nada: la ruta se movio. Contarlo como bloqueo hacia
+      // que el diagnostico culpara a la red de un enlace caduco.
+      const desenlace: Desenlace = status === 404 || status === 410 ? 'ruta' : 'bloqueo';
+      return { entry, desenlace, detalle: `HTTP ${status}` };
+    }
+
+    const mensaje = (error instanceof Error ? error.message : String(error)).slice(0, 60);
+    return { entry, desenlace: 'sin-red', detalle: mensaje };
+  }
+}
+
+/**
+ * Repite los bloqueos desde esta maquina y los compara con los de CI.
+ *
+ * Es la prueba que decide si conviene mover el scraper a otro servidor: usa el
+ * mismo cliente y las mismas cabeceras que la corrida real, asi lo unico que
+ * cambia es desde donde sale la peticion.
+ */
 async function probeBlocked(): Promise<void> {
   const { fetchHtml, HttpError } = await import('./lib/http.js');
 
@@ -183,54 +237,75 @@ async function probeBlocked(): Promise<void> {
   console.log('Mismo cliente y mismas cabeceras que la corrida real: lo unico');
   console.log('que cambia es la IP de origen.\n');
 
-  const mejoraron: string[] = [];
-  // Las que en CI respondieron 200: son el testigo. Si aqui tampoco responden,
-  // el problema es la red de esta maquina y no las tiendas.
-  const testigos: string[] = [];
+  const resultados: Resultado[] = [];
 
   for (const entry of BLOCKED) {
-    let aqui: string;
-    let respondio = false;
-    let cambio = false;
+    const resultado = await sondear(
+      entry,
+      fetchHtml as never,
+      HttpError as never,
+    );
+    resultados.push(resultado);
 
-    try {
-      const html = await fetchHtml(entry.url, { retries: 0, timeoutMs: 20_000 });
-      const bloqueo = BLOCK_PAGE.test(html.slice(0, 4000));
-      respondio = !bloqueo;
-      aqui = bloqueo
-        ? `200 pero es un muro anti-bot (${html.length} bytes)`
-        : `200 OK (${html.length} bytes)`;
-      // Solo cuenta como mejora si antes ni siquiera respondia.
-      cambio = respondio && !entry.enActions.startsWith('200');
-    } catch (error) {
-      aqui =
-        error instanceof HttpError
-          ? `HTTP ${error.status}`
-          : (error instanceof Error ? error.message : String(error)).slice(0, 60);
-    }
-
-    if (cambio) mejoraron.push(entry.id);
-    if (entry.enActions.startsWith('200') && !respondio) testigos.push(entry.label);
-
-    console.log(`${cambio ? '🟢' : '  '} ${entry.label.padEnd(13)} en Actions: ${entry.enActions.padEnd(32)} aqui: ${aqui}`);
+    // Solo cuenta como mejora si antes ni siquiera respondia.
+    const mejoro = resultado.desenlace === 'ok' && !entry.enActions.startsWith('200');
+    console.log(
+      `${mejoro ? '🟢' : '  '} ${entry.label.padEnd(13)} ` +
+        `en Actions: ${entry.enActions.padEnd(32)} aqui: ${resultado.detalle}`,
+    );
   }
 
   console.log('');
 
-  // Antes de concluir nada: si las que si respondian en CI tampoco responden
-  // aqui, esta maquina no tiene salida directa a internet y la comparacion no
-  // vale. Sin esta comprobacion el diagnostico afirmaria lo contrario de lo
-  // que pasa, que es peor que no diagnosticar.
-  if (testigos.length > 0) {
-    console.log(`⚠ No se puede concluir: ${testigos.join(', ')} tambien fallan aqui,`);
-    console.log('  y en CI respondian 200. Esta maquina esta detras de un proxy o');
-    console.log('  cortafuegos que bloquea las tiendas. Corre esto donde tengas');
-    console.log('  salida directa a internet (tu VPS).');
+  const enCiRespondian = resultados.filter((r) => r.entry.enActions.startsWith('200'));
+
+  // Antes de concluir nada: si las que si respondian en CI ni siquiera
+  // conectan aqui, esta maquina no tiene salida a internet y la comparacion
+  // no vale. Sin esta comprobacion el diagnostico afirmaria lo contrario de
+  // lo que pasa, que es peor que no diagnosticar.
+  //
+  // Se mira solo `sin-red`: un 403 o un 404 son respuestas de la tienda, y
+  // tomarlos por falta de conexion daba el veredicto al reves.
+  const sinRed = enCiRespondian.filter((r) => r.desenlace === 'sin-red');
+
+  if (sinRed.length > 0) {
+    const nombres = sinRed.map((r) => r.entry.label).join(', ');
+    console.log(`⚠ No se puede concluir: ${nombres} ni siquiera conectan desde aqui,`);
+    console.log('  y en CI respondian 200. Esta maquina no tiene salida directa a');
+    console.log('  internet. Corre esto donde la tenga (tu VPS).');
     return;
   }
 
+  const caducadas = resultados.filter((r) => r.desenlace === 'ruta');
+  if (caducadas.length > 0) {
+    const nombres = caducadas.map((r) => r.entry.label).join(', ');
+    const varias = caducadas.length > 1;
+    console.log(`Ojo: ${nombres} ${varias ? 'devuelven' : 'devuelve'} 404. Eso no es un`);
+    console.log('bloqueo: la peticion llego y la tienda contesto que ahi no hay nada.');
+    console.log(`${varias ? 'Sus URL de busqueda cambiaron' : 'Su URL de busqueda cambio'} y hay que corregirlas`);
+    console.log('antes de sacar conclusiones sobre la IP.');
+    console.log('');
+  }
+
+  // Una tienda que en CI respondia y aqui devuelve un bloqueo no invalida la
+  // prueba, pero es lo contrario de lo que se buscaba: conviene decirlo.
+  const empeoraron = enCiRespondian.filter((r) => r.desenlace === 'bloqueo');
+  if (empeoraron.length > 0) {
+    const nombres = empeoraron.map((r) => r.entry.label).join(', ');
+    const varias = empeoraron.length > 1;
+    console.log(`${nombres} ${varias ? 'respondian' : 'respondia'} en CI y aqui ${varias ? 'bloquean' : 'bloquea'}:`);
+    console.log(`esta IP les gusta menos que la del runner, asi que mover el scraper`);
+    console.log(`aqui ${varias ? 'las perderia' : 'la perderia'}.`);
+    console.log('');
+  }
+
+  const mejoraron = resultados.filter(
+    (r) => r.desenlace === 'ok' && !r.entry.enActions.startsWith('200'),
+  );
+
   if (mejoraron.length > 0) {
-    console.log(`Estas SI responden desde aqui y no desde CI: ${mejoraron.join(', ')}`);
+    const nombres = mejoraron.map((r) => r.entry.id).join(', ');
+    console.log(`Estas SI responden desde aqui y no desde CI: ${nombres}`);
     console.log('El bloqueo era por la IP del runner. Correr el scraper en este');
     console.log('servidor las recupera; ver "Correr el scraper en un VPS" en el README.');
   } else {
