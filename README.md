@@ -5,8 +5,9 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 
 - **Búsquedas**: se administran desde el panel; la semilla trae `bodegas de jardín`,
   `cajas organizadoras` y `Rexona Clinical`.
-- **Tiendas**: seis se leen directo (Falabella, Sodimac, IKEA, PC Factory, Hites, Unimarc)
-  y diez más llegan vía SoloTodo (ver [estado de cada tienda](#estado-verificado-de-cada-tienda)).
+- **Tiendas**: siete se leen directo (Falabella, Sodimac, IKEA, PC Factory, Hites,
+  Unimarc, ABC) y ocho más llegan vía SoloTodo (ver
+  [estado de cada tienda](#estado-verificado-de-cada-tienda)).
 - **Acceso**: solo `javier.neo@gmail.com`, con Google Sign-In.
 - **Actualización**: dos veces al día vía GitHub Actions (gratis, sin plan Blaze), o
   a demanda con el botón **↻ Actualizar ahora** del panel.
@@ -17,7 +18,8 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 GitHub Actions (cron 2×/día)
         │
         ▼
-   packages/scraper ──consulta──► 6 tiendas directo + SoloTodo (10 más)
+   packages/scraper ──consulta──► 7 tiendas directo + SoloTodo (8 más)
+        │                          (en paralelo; cada tienda en serie)
         │
         │ normaliza, filtra ruido, calcula variación y descuento
         ▼
@@ -89,12 +91,14 @@ firestore.rules           Quién lee, y lo único que el panel puede escribir.
 | --- | --- |
 | `bash scripts/deploy.sh` | Despliegue completo: verifica, sube reglas, índices y panel |
 | `bash scripts/deploy.sh --dry` | Igual pero sin desplegar: solo comprueba |
+| `sudo bash scripts/vps-install.sh <clave.json>` | Deja el scraper corriendo en un servidor propio |
 | `bash scripts/set-github-token.sh` | Activa el botón "Actualizar ahora" del panel (una vez) |
 | `npm run dev` | Panel web en `http://localhost:5173` |
 | `npm run scrape` | Corrida real: consulta tiendas y escribe en Firestore |
 | `npm run scrape -- --dry-run` | Consulta y muestra por pantalla, sin escribir |
 | `npm run scrape -- --stores=easy,paris` | Limita las tiendas |
 | `npm run scrape -- --searches=bodegas-jardin` | Limita las búsquedas |
+| `npm run scrape -- --concurrency=1` | Tiendas de a una, para depurar |
 | `npm run diagnose` | Prueba URLs candidatas por tienda y describe qué devuelven |
 | `npm run seed` | Carga productos de ejemplo en Firestore |
 | `npm run purge -- --store=ikea` | Borra los productos de una tienda y su historial |
@@ -102,9 +106,29 @@ firestore.rules           Quién lee, y lo único que el panel puede escribir.
 | `npm run diagnose -- --capture='URL'` | Vuelca el JSON que la página pide por XHR |
 | `npm run diagnose -- --capture='URL' --sample='ruta'` | Un producto entero de ese endpoint, y su petición |
 | `npm run diagnose -- --blocked` | ¿Los bloqueos dependen de la IP? |
-| `npm test` | Tests de la lógica pura (108 casos) |
+| `npm test` | Tests de la lógica pura (156 casos) |
 | `npm run typecheck` | TypeScript en ambos paquetes |
 | `npm run build` | Compila el panel a `packages/web/dist` |
+
+## Cuánto tarda una corrida
+
+Las tiendas se consultan en paralelo y las consultas de cada una en fila. Son
+hosts independientes, así que esperar a que conteste Falabella para preguntarle
+a Sodimac solo alargaba la corrida; dentro de una tienda el orden se mantiene
+porque ahí sí comparten servidor, y porque los adaptadores que prueban varias
+estrategias recuerdan cuál les funcionó.
+
+Medido contra cuatro tiendas reales (Falabella, Sodimac, PC Factory, Unimarc),
+con los mismos 272 resultados y los mismos 95 productos en ambos casos:
+
+| | Tiempo |
+| --- | --- |
+| `--concurrency=1` (como antes) | 58 s |
+| `--concurrency=4` (por defecto) | 13 s |
+
+El tope por defecto son cuatro tiendas a la vez, y lo pone la memoria: varias
+abren un contexto de Chromium. Para depurar conviene `--concurrency=1`, que
+deja el log en orden y sin intercalar.
 
 ## Modelo de datos
 
@@ -130,7 +154,29 @@ cambia, así el historial es una escalera limpia y no crece con corridas repetid
 
 **`runs/{runId}`** — resultado de cada corrida, tienda por tienda. El panel lo
 muestra arriba: si Sodimac deja de responder, se ve ahí en vez de quedar con
-precios congelados sin aviso.
+precios congelados sin aviso. Se conservan las 180 últimas —tres meses, con dos
+corridas al día— y cada corrida borra las anteriores: el panel solo lee la
+última y nadie mira un historial que crece para siempre.
+
+**`meta/orphanScan`** — qué búsquedas había la última vez y cuándo se barrió
+`products` entero. Un producto se queda sin ninguna búsqueda solo cuando el
+panel borra una, porque el scraper a un producto que no encontró ni siquiera lo
+escribe. Así que si ninguna desapareció, el barrido serían cientos de lecturas
+para cero borrados y se omite. Una vez por semana se hace igual, por si el
+panel se quedó a medias desligando productos.
+
+## El panel
+
+Además de ordenar y filtrar, dos cosas que salen de lo ya guardado:
+
+- **Mínimo histórico.** `minPrice` se guardaba desde el principio y no se veía
+  en ninguna parte. Un producto que hoy está al precio más bajo que se le ha
+  visto lleva su etiqueta en la tabla, tiene su propio filtro y su tarjeta en el
+  resumen. Se exige que el precio haya variado alguna vez: si no, el primer día
+  todo el catálogo aparecería marcado y la señal no distinguiría nada.
+- **Exportar CSV.** Descarga lo que se está mostrando, con sus filtros y su
+  orden. Sale con punto y coma y BOM, que es lo que Excel en español necesita
+  para no abrirlo todo apilado en una columna y con los acentos rotos.
 
 ## Agregar una tienda
 
@@ -195,8 +241,9 @@ para que el singular también aparezca.
 
 Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 
-- **Aislamiento por consulta**: si Sodimac falla, las otras cuatro tiendas igual
-  guardan sus datos.
+- **Aislamiento por consulta**: si Sodimac falla, las demás tiendas igual
+  guardan sus datos. Van en paralelo y cada una lleva su propia cuenta, así que
+  una que se cuelgue veinte segundos tampoco le roba ese tiempo al resto.
 - **Datos estructurados antes que selectores CSS**: se leen los bloques JSON-LD y el
   estado embebido de la SPA, que cambian mucho menos que las clases de CSS.
 - **Mercado Libre con doble vía**: primero la API pública; si responde 401/403, cae
@@ -213,13 +260,15 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 | **PC Factory** | HTTP · API REST propia (`api.pcfactory.cl`) | ✅ |
 | **Hites** | Sondeo de las 6 técnicas | ✅ |
 | **Unimarc** | HTTP · su propio BFF (`POST /catalog/product/search`) | ✅ |
-| **SoloTodo** | HTTP · API pública del comparador | ✅ trae 10 tiendas más |
+| **ABC** (ex La Polar y ABCDIN) | HTTP · microdatos schema.org de cada ficha | ✅ |
+| **SoloTodo** | HTTP · API pública del comparador | ✅ trae 8 tiendas más |
 | Ahumada | Sondeo de las 6 técnicas | 🔄 responde 200, sin XHR: todo en el HTML |
 | Jumbo, Santa Isabel | — | ⛔ renderizan sin precios y sin pedir catálogo |
 | Salcobrand | — | ⛔ ninguna ruta responde |
-| Líder, Paris, Easy, Ripley, La Polar, ABCDIN, SP Digital, Winpy, Jumbo, Santa Isabel | vía **SoloTodo** | ✅ inalcanzables directo |
-| SP Digital, Winpy | — | ⛔ muro anti-bot con 403, no es por IP |
-| La Polar, ABCDIN, Construmart, Imperial | — | ⛔ 200 pero sin productos reconocibles |
+| Líder, Paris, Easy, Ripley, SP Digital, Winpy, Jumbo, Santa Isabel | vía **SoloTodo** | ✅ inalcanzables directo |
+| SP Digital, Winpy | — | ⛔ muro anti-bot con 403, ni por IP de datacenter ni residencial |
+| Construmart | — | ⛔ publica su catálogo, pero con todos los precios en 0 |
+| Imperial | — | ⛔ 200 pero sin productos reconocibles |
 | Corona | — | ⛔ no conecta |
 | Mercado Libre | — | ⛔ API con token e interstitial anti-bot |
 
@@ -230,12 +279,15 @@ false`; se reactivan cambiando esa línea.
 `--capture` se ve que lo único que pide la página son las llamadas de su
 recolector de huellas (`collector-*.px-cloud.net`), y los productos nunca
 cargan, ni con navegador. Eso no es un problema de extracción y no se resuelve
-con código —haría falta IP residencial o un servicio de desbloqueo de pago—,
-así que se descarta en vez de dejarla fallando en cada corrida.
+con código, así que se descarta en vez de dejarla fallando en cada corrida.
 
-Y no es cuestión de dónde corra el scraper: `--blocked` comparó los mismos
-pedidos desde GitHub Actions y desde un VPS con IP chilena, y los 403 fueron
-idénticos. El bloqueo no depende de la reputación de la IP.
+Y no es cuestión de dónde corra el scraper. `--blocked` repitió los mismos
+pedidos desde tres orígenes —GitHub Actions, un VPS con IP chilena de
+datacenter y una conexión doméstica de VTR en Santiago— y los 403 de SP Digital
+y Winpy fueron idénticos en los tres. Quedaba la duda de si una IP residencial
+los pasaría; no los pasa. El bloqueo no depende de la reputación de la IP y
+mover el scraper no lo resuelve (ver
+[Correr el scraper en un VPS](#correr-el-scraper-en-un-vps)).
 
 Para ver cuáles respondieron y con qué técnica:
 
@@ -275,7 +327,7 @@ y no en cada consulta:
 | 2 | **VTEX Intelligent Search** | tiendas VTEX que ya migraron y dejaron el clásico vacío |
 | 3 | **Shopify** | `/search/suggest.json`, la búsqueda predictiva del propio sitio |
 | 4 | **WooCommerce Store API** | `/wp-json/wc/store/v1/products`, la API del carrito |
-| 5 | **Datos estructurados del HTML** | JSON-LD o el estado embebido (`__NEXT_DATA__`) |
+| 5 | **Datos estructurados del HTML** | JSON-LD, el estado embebido (`__NEXT_DATA__`) o microdatos `itemprop` |
 | 6 | **Navegador headless** | 403 por huella TLS, o productos que llegan por XHR |
 
 Las cuatro primeras devuelven un JSON limpio con una sola petición: no hay HTML
@@ -345,13 +397,78 @@ corrida real —lo único que cambia es desde dónde salen— y compara contra l
 devolvió CI. Si alguna pasa de 403 a 200, ese bloqueo era de IP y correr el
 scraper en un VPS la recupera.
 
-Incluye como testigo las tiendas que en CI **sí** respondían 200. Si esas
-también fallan, la máquina no tiene salida directa a internet y el diagnóstico
-lo dice en vez de sacar una conclusión equivocada.
+Incluye como testigo las tiendas que en CI **sí** respondían 200. Si esas ni
+siquiera conectan, la máquina no tiene salida a internet y el diagnóstico lo
+dice en vez de sacar una conclusión equivocada.
 
-Ojo con la distinción: un `403` es un bloqueo; un `200 sin productos
-reconocidos` no lo es —la página cargó— y ahí la IP da igual. Para esas, lo que
-sirve es capturar el XHR:
+Distingue cuatro desenlaces, y la diferencia es todo el diagnóstico:
+
+| Desenlace | Qué significa |
+| --- | --- |
+| `200 OK` | Respondió |
+| `403`, `429`, muro anti-bot | Bloqueo: la petición llegó y la rechazaron |
+| `404`, `410` | La petición llegó y ahí ya no hay nada: **la URL cambió** |
+| Error de red, timeout | No se llegó a la tienda: es esta máquina |
+
+Solo el último habla de la conexión. Confundir un `404` con un bloqueo hacía
+que el diagnóstico culpara a la red de un enlace caducado y diera el veredicto
+al revés —fue justo lo que pasó con Easy, cuya ruta de búsqueda había
+cambiado—.
+
+Y un `200 sin productos reconocidos` tampoco es un bloqueo: la página cargó y
+ahí la IP da igual. Para esas, lo que sirve es capturar el XHR:
+
+### Correr el scraper en un VPS
+
+Si `--blocked` muestra tiendas que responden en tu servidor y no en CI, mover
+el scraper allí las recupera. El script deja todo andando:
+
+```bash
+git clone https://github.com/javier26x/busquedastiendas.git
+cd busquedastiendas
+sudo bash scripts/vps-install.sh /ruta/a/service-account.json
+```
+
+Instala dependencias y Chromium, guarda la clave en `/etc/monitor-precios/`
+con permisos 600 y crea un timer de systemd que corre a las 9 y a las 21 hora
+de Chile (`--hours=8,20` para cambiarlo). El timer lleva `Timezone`, así que el
+horario de verano no lo corre una hora como sí pasa con el cron de Actions, y
+`Persistent=true`, así que si el servidor estuvo apagado corre al encender en
+vez de saltarse el día.
+
+```bash
+systemctl list-timers monitor-precios.timer   # cuándo corre la próxima
+systemctl start monitor-precios.service       # una corrida ahora
+journalctl -u monitor-precios.service -f      # ver el log
+sudo bash scripts/vps-install.sh --uninstall
+```
+
+**Apaga el cron de Actions al hacerlo.** Los dos escribirían los mismos
+documentos y se pisarían el cálculo de variación de precio: el workflow tiene un
+`concurrency` que lo protege de sí mismo, pero no sabe de tu servidor. Basta
+comentar las líneas `schedule:` de `.github/workflows/scrape.yml`. El botón
+**↻ Actualizar ahora** del panel sigue disparando el workflow y eso está bien:
+es una corrida a demanda, no una repetida.
+
+Para medirlo desde un servidor recién instalado, sin clonar ni instalar Node:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/javier26x/busquedastiendas/main/scripts/probe-blocked-standalone.sh | bash
+```
+
+#### Lo que se midió desde una IP residencial chilena
+
+El README decía que para las tiendas tras un anti-bot comercial "haría falta IP
+residencial o un servicio de desbloqueo de pago". Se probó: VTR, Santiago,
+conexión doméstica. **SP Digital y Winpy siguen devolviendo 403**, igual que
+desde GitHub Actions y que desde un VPS con IP de datacenter. El bloqueo no es
+de reputación de IP y no se resuelve mudando el scraper.
+
+Lo que sí apareció fue otra cosa: La Polar y ABCDIN no estaban bloqueadas. Sus
+dominios redirigen a `abc.cl` tras la fusión, y la redirección se come el
+término buscado y deja al visitante en la portada. Por eso respondían "200 sin
+productos reconocidos": no había ninguno porque nunca se llegaba a buscar. Con
+la ruta correcta (`/Busqueda/?q=`) funcionan, y son la tienda `abc`.
 
 ### Cómo se resolvió Unimarc
 
@@ -382,6 +499,8 @@ Necesita Chromium (`npx playwright install --with-deps chromium`). Lista cada
 respuesta JSON capturada, cuántos productos saca el extractor genérico, y una
 muestra del primero que parezca producto para afinar el adaptador.
 
-> Las tiendas se consultan con una espera entre peticiones y sin paralelismo, a un
-> volumen comparable al de una persona navegando. Aun así, revisa los términos de
-> uso de cada sitio antes de subir la frecuencia del cron.
+> Cada tienda se consulta de a una petición por vez y con una espera entre ellas,
+> a un volumen comparable al de una persona navegando. El paralelismo es *entre*
+> tiendas, que son servidores distintos: ninguna recibe más tráfico que antes.
+> Aun así, revisa los términos de uso de cada sitio antes de subir la frecuencia
+> del cron.
