@@ -5,8 +5,8 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 
 - **Búsquedas**: se administran desde el panel; la semilla trae `bodegas de jardín`,
   `cajas organizadoras` y `Rexona Clinical`.
-- **Tiendas**: siete se leen directo (Falabella, Sodimac, IKEA, PC Factory, Hites,
-  Unimarc, ABC) y ocho más llegan vía SoloTodo (ver
+- **Tiendas**: ocho se leen directo (Falabella, Sodimac, IKEA, PC Factory, Hites,
+  Unimarc, ABC, Dimeiggs) y ocho más llegan vía SoloTodo (ver
   [estado de cada tienda](#estado-verificado-de-cada-tienda)).
 - **Acceso**: solo `javier.neo@gmail.com`, con Google Sign-In.
 - **Actualización**: dos veces al día vía GitHub Actions (gratis, sin plan Blaze), o
@@ -18,7 +18,7 @@ ordenables por **precio**, **variación de precio** y **si están en oferta**.
 GitHub Actions (cron 2×/día)
         │
         ▼
-   packages/scraper ──consulta──► 7 tiendas directo + SoloTodo (8 más)
+   packages/scraper ──consulta──► 8 tiendas directo + SoloTodo (8 más)
         │                          (en paralelo; cada tienda en serie)
         │
         │ normaliza, filtra ruido, calcula variación y descuento
@@ -261,6 +261,7 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 | **Hites** | Sondeo de las 6 técnicas | ✅ |
 | **Unimarc** | HTTP · su propio BFF (`POST /catalog/product/search`) | ✅ |
 | **ABC** (ex La Polar y ABCDIN) | HTTP · microdatos schema.org de cada ficha | ✅ |
+| **Dimeiggs** | HTTP · VTEX Intelligent Search | ✅ |
 | **SoloTodo** | HTTP · API pública del comparador | ✅ trae 8 tiendas más |
 | Ahumada | Sondeo de las 6 técnicas | 🔄 responde 200, sin XHR: todo en el HTML |
 | Jumbo, Santa Isabel | — | ⛔ renderizan sin precios y sin pedir catálogo |
@@ -270,10 +271,21 @@ Las tiendas cambian su HTML sin avisar. El diseño asume que eso va a pasar:
 | Construmart | — | ⛔ publica su catálogo, pero con todos los precios en 0 |
 | Imperial | — | ⛔ 200 pero sin productos reconocibles |
 | Corona | — | ⛔ no conecta |
+| Tottus | — | ⛔ su buscador devuelve el catálogo de Falabella, no el suyo |
+| Casaideas | — | ⛔ Magento con GraphQL aparte, cerrado a todo cliente HTTP |
+| Cruz Verde | — | ⛔ API propia, pero exige un token sacado de su bundle |
 | Mercado Libre | — | ⛔ API con token e interstitial anti-bot |
 
 Las ⛔ están declaradas con su motivo anotado en `config/stores.ts` y `enabled:
 false`; se reactivan cambiando esa línea.
+
+**Cómo se evalúa una candidata.** `--probe` primero, que en una vuelta descarta
+o resuelve: a Dimeiggs le encontró VTEX Intelligent Search y escupió la línea
+exacta para pegar. Si ninguna API responde, `--capture` con navegador dice si la
+página pide su catálogo por detrás. Las que no pasaron ninguna de las dos —Homy,
+Wenco, Preunic, Tricot, Corona, Prodalam, Chilemat, Salcobrand— no se declaran:
+un registro lleno de tiendas apagadas que solo dicen "no" estorba más de lo que
+ayuda. Sí se declaran, con su motivo, las que quedaron a un paso.
 
 **Sobre los anti-bot comerciales.** Líder resultó estar tras PerimeterX: con
 `--capture` se ve que lo único que pide la página son las llamadas de su

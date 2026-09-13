@@ -141,12 +141,24 @@ export const STORES: StoreAdapter[] = [
     buildUrls: (q) => [`https://www.ikea.com/cl/es/search/?q=${enc(q)}`],
     settleMs: 2500,
   }),
+  // Tottus no sirve, y no por lo que decia antes. El motivo anotado era
+  // "supermercado: rara vez tiene estos productos", que dejo de ser cierto al
+  // agregarse la busqueda de Rexona. Al revisarlo aparecieron dos cosas:
+  //
+  // La URL configurada devuelve 404: Tottus se mudo a su propio subdominio,
+  // tottus.falabella.com. Y ahi esta el problema real, porque esa si responde
+  // y con 48 productos que el extractor lee sin tocar nada. Son los mismos 48
+  // de Falabella: los ids coinciden uno a uno, es su catalogo servido bajo
+  // otro dominio. Activarlo duplicaria cada producto de Falabella en un
+  // segundo documento con su propio historial.
+  //
+  // Queda declarado para que la proxima vez no haya que volver a medirlo.
   createHtmlSearchAdapter({
     id: 'tottus',
     label: 'Tottus',
-    base: 'https://www.falabella.com',
-    buildUrls: (q) => [`https://www.falabella.com/tottus-cl/search?Ntt=${enc(q)}`],
-    enabled: false, // Supermercado: rara vez tiene estos productos.
+    base: 'https://tottus.falabella.com',
+    buildUrls: (q) => [`https://tottus.falabella.com/tottus-cl/search?Ntt=${enc(q)}`],
+    enabled: false,
   }),
 
   // --- Grupo Cencosud ------------------------------------------------------
@@ -330,6 +342,12 @@ export const STORES: StoreAdapter[] = [
     paths: (q) => [`https://www.farmaciasahumada.cl/search?q=${enc(q)}`],
   }),
 
+  // Dimeiggs migro a VTEX Intelligent Search y dejo el catalogo clasico
+  // vacio: `/api/catalog_system/pub/products/search` devuelve `[]` con un 200,
+  // que es justo el caso para el que existe la tecnica 2. Aporta poco volumen
+  // —dos o tres cajas organizadoras— pero cuesta una sola peticion.
+  createVtexIntelligentSearchAdapter({ id: 'dimeiggs', label: 'Dimeiggs', host: 'www.dimeiggs.cl' }),
+
   // --- Agregador -----------------------------------------------------------
   // SoloTodo no es una tienda: es el comparador chileno, y su API publica
   // cubre las que aqui resultaron inalcanzables. Se limita a esas adrede:
@@ -354,6 +372,39 @@ export const STORES: StoreAdapter[] = [
       'Winpy',
     ],
   }),
+
+  // --- Evaluadas y descartadas, con lo que se encontro -------------------
+  // Casaideas corre sobre Magento y su GraphQL vive aparte, en
+  // ecom-be.casaideas.cl. Responde perfectamente desde el navegador —asi carga
+  // su propia tienda— y devuelve 404 a cualquier cliente HTTP, incluso a una
+  // consulta trivial como `{storeConfig{code}}`. No es que falte un parametro:
+  // es un muro por huella de cliente. Habria que leerla con navegador, y ahi
+  // la busqueda tampoco pide ningun JSON de productos que se pueda capturar.
+  createUnknownPlatformStore({
+    id: 'casaideas',
+    label: 'Casaideas',
+    host: 'www.casaideas.cl',
+    enabled: false,
+  }),
+  // Cruz Verde es la que mas cerca estuvo. Tiene una API limpia y propia en
+  // api.cruzverde.cl/product-service/products/search?query=, pero responde 401
+  // "La sesion ha expirado": exige un token que el sitio saca de
+  // profiles-orc.api.andesml.com/identity/v1/client/auth, y ese pide un
+  // clientId que solo esta dentro de su bundle de JavaScript.
+  //
+  // Se puede sacar, pero seria reconstruir su autenticacion: un valor que rota
+  // sin aviso y que dejaria la tienda fallando en silencio. Queda anotado por
+  // si algun dia abren la busqueda, que es lo unico que falta.
+  createUnknownPlatformStore({
+    id: 'cruzverde',
+    label: 'Cruz Verde',
+    host: 'www.cruzverde.cl',
+    enabled: false,
+  }),
+  // Sin rastro de productos por ninguna de las seis tecnicas: Homy (SPA sobre
+  // infraestructura de Falabella, el HTML no trae ni un precio), Wenco,
+  // Preunic, Tricot, Corona, Prodalam, Chilemat y Salcobrand. No se declaran
+  // para no llenar el registro de tiendas que solo dirian que no.
 
   fixtureAdapter,
 ];
